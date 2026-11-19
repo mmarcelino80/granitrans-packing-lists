@@ -39,6 +39,6 @@ Os ícones são do Bootstrap Icons 1.13.1, com a licença em `assets/bootstrap-i
 
 ## Identidade visual
 
-O cabeçalho usa texto simples provisório no desktop e apenas o título em mobile enquanto o original não estiver disponível no repositório. Para concluir a integração, use o ficheiro oficial para preparar duas imagens, mantendo o símbolo intacto. No desktop, inclua a marca completa e remova o endereço do site. Em mobile, recorte apenas o símbolo vermelho e mantenha-o alinhado ao centro com o separador vertical e o título.
+O cabeçalho usa o logótipo oficial fornecido em `Logotipo GRANITRANS.png`. O ficheiro para desktop exclui o endereço do site. No telemóvel, o cabeçalho usa apenas o recorte do símbolo oficial ao lado do separador e do título.
 
-O manifesto `manifest.webmanifest` define o nome, o âmbito e o endereço de arranque relativos ao projeto. A integração do ícone fornecido no favicon, no atalho iOS e no manifesto aguarda o ficheiro original.
+O ícone fornecido em `icon_GTR_width_800.png` é usado no favicon, no atalho iOS e nos tamanhos 192 × 192 e 512 × 512 do manifesto. O manifesto tem caminhos relativos ao projeto. A opção de adicionar ao ecrã principal depende do navegador e de servir a aplicação num contexto seguro.

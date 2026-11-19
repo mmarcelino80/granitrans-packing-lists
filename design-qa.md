@@ -1,11 +1,9 @@
 # Verificação visual da v0.1
 
-final result: blocked
+final result: passed
 
-A revisão da identidade visual aguarda os ficheiros originais do logótipo e do ícone da aplicação. As imagens são visíveis na conversa. Os ficheiros não estavam disponíveis no ambiente de desenvolvimento. O cabeçalho mostra texto simples no desktop e apenas o título no telemóvel.
-
-- **Desktop, 1448 × 1086.** Verifiquei a expedição e os materiais à esquerda, a pré-visualização em texto monoespaçado à direita e as ações por baixo do editor. Comparei os estados inicial e de demonstração com o mockup desktop. Os seletores começam desmarcados e a rota aparece após uma seleção.
-- **Telemóvel, 393 × 852.** Verifiquei os cartões verticais, a grelha de destinos, a seleção de guias e os atalhos inferiores. A comparação usou o conteúdo da aplicação na referência, excluindo a moldura do dispositivo.
-- **Validação funcional.** Os testes em Chromium abrangeram rato e toque, seleção e remoção de guias, edição e validação de materiais, exportação UTF-8, email preparado e a chamada de partilha com uma API simulada. Verifiquei seis larguras entre 320 e 1448 px e executei axe-core a 393 e 1448 px.
-- **Manifesto.** O Chromium leu o manifesto e resolveu o identificador, o endereço de arranque e o âmbito para `/granitrans-packing-lists/`. A instalação em telemóvel aguarda a integração e validação do ícone.
-- **Capturas da revisão.** O estado inicial e a demonstração aprovada foram capturados em Chromium com a configuração regional portuguesa. As imagens desta sessão estão em `/workspace/scratch/granitrans-review`, fora do repositório.
+- **Desktop, 1448 × 1086.** O cabeçalho mostra o logótipo oficial completo sem endereço do site. A expedição e os materiais ficam à esquerda e a pré-visualização de texto à direita.
+- **Telemóvel, 393 × 852.** O símbolo oficial, o separador vertical e «Packing List» partilham o mesmo alinhamento central. Os cartões são verticais e os atalhos ficam no fundo. O cabeçalho branco acompanha o fundo da imagem original.
+- **Imagem e ícones.** Os PNG do logótipo usam os píxeis do original do GitHub e conservam o perfil de cor. As variantes do ícone mantêm as proporções do ficheiro fornecido. O Chromium carregou o favicon, o ícone Apple e os dois ícones do manifesto nos tamanhos declarados, com caminhos relativos ao projeto.
+- **Validação funcional.** Passaram os oito testes Node e os fluxos em Chromium para desktop e mobile. Verifiquei seis larguras entre 320 e 1448 px. O axe-core não detetou violações a 393 e 1448 px. A instalação nativa em telemóvel fica por validar.
+- **Capturas da revisão.** Os estados inicial e de demonstração aprovada foram capturados em Chromium com a configuração regional portuguesa. As imagens desta sessão estão em `/workspace/scratch/granitrans-review`, fora do repositório.

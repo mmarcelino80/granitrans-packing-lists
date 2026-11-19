@@ -7,7 +7,8 @@
   <meta name="theme-color" content="#ffffff">
   <meta name="description" content="Prepare e reveja a packing list para a expedição.">
   <title>Granitrans — Packing List</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./app.mjs"></script>
@@ -15,7 +16,10 @@
 <body>
   <header class="site-header">
     <div class="brand">
-      <span class="brand-wordmark">GRANITRANS</span>
+      <picture class="brand-logo">
+        <source media="(max-width: 860px)" srcset="./assets/granitrans-symbol.png">
+        <img src="./assets/granitrans-logo.png" alt="Granitrans">
+      </picture>
       <span class="brand-divider" aria-hidden="true"></span>
       <h1>Packing List</h1>
     </div>
