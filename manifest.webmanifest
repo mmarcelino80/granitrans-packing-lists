@@ -1,0 +1,11 @@
+{
+  "id": "./",
+  "name": "Granitrans — Packing List",
+  "short_name": "Packing List",
+  "lang": "pt-PT",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f8",
+  "theme_color": "#ffffff"
+}

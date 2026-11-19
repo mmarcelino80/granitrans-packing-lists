@@ -40,3 +40,5 @@ Os ícones são do Bootstrap Icons 1.13.1, com a licença em `assets/bootstrap-i
 ## Identidade visual
 
 O cabeçalho usa texto simples provisório no desktop e apenas o título em mobile enquanto o original não estiver disponível no repositório. Para concluir a integração, use o ficheiro oficial para preparar duas imagens, mantendo o símbolo intacto. No desktop, inclua a marca completa e remova o endereço do site. Em mobile, recorte apenas o símbolo vermelho e mantenha-o alinhado ao centro com o separador vertical e o título.
+
+O manifesto `manifest.webmanifest` define o nome, o âmbito e o endereço de arranque relativos ao projeto. A integração do ícone fornecido no favicon, no atalho iOS e no manifesto aguarda o ficheiro original.
