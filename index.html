@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Prepare e reveja a packing list para a expedição.">
+  <title>Granitrans — Packing List</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-wordmark">GRANITRANS</span>
+      <span class="brand-divider" aria-hidden="true"></span>
+      <h1>Packing List</h1>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <div class="editor">
+      <section class="card shipment-card" aria-label="Dados da expedição">
+        <div class="date-section">
+          <label class="section-label" for="date">
+            <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#calendar3"></use></svg>
+            Data de carregamento
+          </label>
+          <input id="date" type="date" required>
+        </div>
+        <div class="route-section">
+          <h2>
+            <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#geo-alt"></use></svg>
+            Destinos
+          </h2>
+          <div class="destination-options" id="destination-options">
+            <button class="destination-btn" type="button" data-destination="Paris" aria-pressed="false">Paris</button>
+            <button class="destination-btn" type="button" data-destination="Thionville" aria-pressed="false">Thionville</button>
+            <button class="destination-btn" type="button" data-destination="Valence" aria-pressed="false">Valence</button>
+            <button class="destination-btn" id="custom-toggle" type="button" aria-label="Outro destino/armazém" aria-expanded="false" aria-controls="custom-destination">
+              <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#plus-lg"></use></svg>
+              <span class="desktop-only">Outro destino/armazém</span>
+              <span class="mobile-only">Outro destino</span>
+            </button>
+          </div>
+          <form id="custom-destination" class="custom-destination" hidden>
+            <label for="custom-name">Nome do destino ou armazém</label>
+            <div class="custom-entry">
+              <input id="custom-name" type="text" maxlength="100" placeholder="Ex. Lyon" aria-describedby="custom-error">
+              <button type="submit" class="outline">Adicionar destino</button>
+            </div>
+            <p id="custom-error" class="field-error" role="alert" hidden></p>
+          </form>
+          <ul id="custom-list" class="custom-list" aria-label="Destinos personalizados" hidden></ul>
+          <p id="route-summary" class="route-summary" aria-live="polite" hidden>
+            <strong class="field-label">Rota (resumo)</strong>
+            <span id="route-text"></span>
+          </p>
+        </div>
+      </section>
+
+      <section class="card intro-card" aria-labelledby="intro-heading">
+        <h2 id="intro-heading"><label for="introduction">Introdução (PT/FR)</label></h2>
+        <textarea id="introduction" rows="3" required></textarea>
+      </section>
+
+      <section class="card guides-card" aria-labelledby="guides-heading">
+        <h2 id="guides-heading">
+          <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#camera"></use></svg>
+          Guias de carregamento
+        </h2>
+        <div class="file-controls">
+          <label class="upload-target" id="upload-target">
+            <input id="guides" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple aria-describedby="guides-help">
+            <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#images"></use></svg>
+            <span>Adicionar fotografias ou ficheiros</span>
+            <small id="guides-help">JPG, PNG ou PDF</small>
+          </label>
+          <label class="capture-button outline">
+            <input id="camera" type="file" accept="image/jpeg,image/png" capture="environment">
+            <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#camera"></use></svg>
+            Fotografar guia
+          </label>
+        </div>
+        <ul id="file-list" class="file-list" aria-label="Ficheiros anexados" hidden></ul>
+        <p id="file-error" class="field-error" role="alert" hidden></p>
+        <p class="helper-text">As guias ficam neste dispositivo durante a sessão. Introduza os materiais manualmente.</p>
+      </section>
+
+      <section class="card materials-card" id="materials" tabindex="-1" aria-labelledby="materials-heading">
+        <h2 id="materials-heading">
+          <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#list-ul"></use></svg>
+          Materiais
+        </h2>
+        <p id="materials-empty" class="empty-state">Selecione os destinos da rota para começar a adicionar materiais.</p>
+        <div class="material-groups" id="material-groups"></div>
+        <div class="materials-tools">
+          <button id="load-demo" type="button" class="outline">Carregar dados fictícios</button>
+          <button id="clear-demo" type="button" class="outline" hidden>Limpar dados fictícios</button>
+        </div>
+        <p id="demo-warning" class="demo-warning" role="status" hidden>Dados fictícios de demonstração. Estes dados não foram extraídos das guias.</p>
+        <datalist id="units">
+          <option value="un"></option>
+          <option value="m²"></option>
+          <option value="m"></option>
+          <option value="kg"></option>
+          <option value="palete"></option>
+          <option value="caixa"></option>
+        </datalist>
+      </section>
+    </div>
+
+    <section class="card preview-card" id="preview" tabindex="-1" aria-labelledby="preview-heading">
+      <div class="preview-heading">
+        <h2 id="preview-heading">
+          <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#file-earmark-text"></use></svg>
+          Pré-visualização (TXT)
+        </h2>
+        <span id="preview-status" class="preview-status" role="status">Em tempo real</span>
+      </div>
+      <pre id="txt-preview" tabindex="0" aria-label="Texto da packing list"></pre>
+    </section>
+
+    <section class="document-actions" aria-label="Aprovação e exportação">
+      <div class="approval-area">
+        <ul id="validation-errors" class="field-error validation-errors" tabindex="-1" aria-label="Erros a corrigir" hidden></ul>
+        <button id="approve" class="outline" type="button">
+          <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#check2"></use></svg>
+          Aprovar TXT
+        </button>
+      </div>
+      <div class="export-actions" id="export" tabindex="-1">
+        <button id="download" class="primary" type="button" disabled>
+          <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#file-earmark-text"></use></svg>
+          Gerar TXT
+        </button>
+        <button id="share" class="outline" type="button" disabled>
+          <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#envelope"></use></svg>
+          <span id="share-label">Preparar email</span>
+        </button>
+      </div>
+      <div id="share-feedback" class="helper-text" role="status" hidden></div>
+      <a id="email-link" class="email-link" hidden>Abrir email para mralo@granitrans.pt</a>
+    </section>
+  </main>
+
+  <nav class="mobile-nav" aria-label="Atalhos da packing list">
+    <a href="#materials">
+      <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#list-ul"></use></svg>
+      Materiais
+    </a>
+    <a href="#preview">
+      <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#file-earmark-text"></use></svg>
+      Pré-visualização
+    </a>
+    <a href="#export">
+      <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#share"></use></svg>
+      Partilhar
+    </a>
+  </nav>
+
+  <noscript><p class="field-error">Ative o JavaScript para preparar a packing list.</p></noscript>
+</body>
+</html>
