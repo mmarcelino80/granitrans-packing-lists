@@ -68,7 +68,8 @@
 
       <section class="card intro-card" aria-labelledby="intro-heading">
         <h2 id="intro-heading"><label for="introduction">Introdução (PT/FR)</label></h2>
-        <textarea id="introduction" rows="3" required></textarea>
+        <textarea id="introduction" rows="8" aria-describedby="introduction-help" required></textarea>
+        <p id="introduction-help" class="helper-text">Separe os blocos PT e FR com duas linhas em branco. Use <code>{{data}}</code> e <code>{{rota}}</code> para inserir a data e o percurso.</p>
       </section>
 
       <section class="card guides-card" aria-labelledby="guides-heading">
@@ -111,7 +112,9 @@
           <option value="m²"></option>
           <option value="m"></option>
           <option value="kg"></option>
-          <option value="palete"></option>
+          <option value="Chapa"></option>
+          <option value="Palete"></option>
+          <option value="Ladrilho"></option>
           <option value="caixa"></option>
         </datalist>
       </section>

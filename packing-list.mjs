@@ -1,9 +1,23 @@
 export const DEFAULT_DESTINATIONS = Object.freeze(['Paris', 'Thionville', 'Valence']);
 
-export const DEFAULT_INTRODUCTION = [
-  'Bom dia. Segue abaixo a lista de carga do camião.',
-  'Bonjour, veuillez trouver ci-dessous la liste de chargement du camion.',
-].join('\n');
+const PORTUGUESE_INTRODUCTION = 'Bom dia,\n\nEnvio o Packing List do camião do dia {{data}}, {{rota}}';
+const FRENCH_INTRODUCTION = 'Bonjour,\n\nJe vous transmets la liste de colisage du camion du {{data}}, {{rota}}';
+
+const BLOCK_SEPARATOR = '\n\n\n';
+
+export const DEFAULT_INTRODUCTION = `${PORTUGUESE_INTRODUCTION}${BLOCK_SEPARATOR}${FRENCH_INTRODUCTION}`;
+
+const DESTINATION_HEADINGS = new Map([
+  ['Paris', 'PARIS / BOISSY-SAINT-LEGER'],
+  ['Thionville', 'THIONVILLE'],
+  ['Valence', 'VALENCE / PORTES-LES-VALENCE'],
+]);
+
+const UNIT_FORMS = [
+  ['Chapa', 'Chapas'],
+  ['Palete', 'Paletes'],
+  ['Ladrilho', 'Ladrilhos'],
+];
 
 export function localDateValue(date = new Date()) {
   const year = String(date.getFullYear()).padStart(4, '0');
@@ -72,6 +86,18 @@ function formatQuantity({ amount, precision }) {
   return fraction ? `${integer},${fraction}` : integer;
 }
 
+function normalizedUnit(value) {
+  const unit = cleanText(value);
+  const lower = unit.toLocaleLowerCase('pt-PT');
+  const forms = UNIT_FORMS.find((pair) => pair.some((form) => form.toLowerCase() === lower));
+  return forms?.[0] ?? unit;
+}
+
+function formatUnit(unit, quantity) {
+  const forms = UNIT_FORMS.find(([singular]) => singular === unit);
+  return forms && quantity !== '1' ? forms[1] : unit;
+}
+
 export function validatePackingList({ date, route, materials, introduction = DEFAULT_INTRODUCTION }) {
   const errors = [];
 
@@ -101,7 +127,7 @@ export function validatePackingList({ date, route, materials, introduction = DEF
 export function materialTotals(materials) {
   const totals = new Map();
   for (const material of materials) {
-    const unit = cleanText(material.unit);
+    const unit = normalizedUnit(material.unit);
     const quantity = parseQuantity(material.quantity);
     if (!quantity || !unit) continue;
 
@@ -109,7 +135,10 @@ export function materialTotals(materials) {
     totals.set(unit, current ? addQuantities(current, quantity) : quantity);
   }
 
-  return Array.from(totals, ([unit, quantity]) => ({ unit, quantity: formatQuantity(quantity) }));
+  return Array.from(totals, ([unit, amount]) => {
+    const quantity = formatQuantity(amount);
+    return { unit: formatUnit(unit, quantity), quantity };
+  });
 }
 
 function materialSections(route, materials) {
@@ -120,7 +149,7 @@ function materialSections(route, materials) {
       if (material.destination !== destination) continue;
 
       const quantity = parseQuantity(material.quantity);
-      const unit = cleanText(material.unit);
+      const unit = normalizedUnit(material.unit);
       const description = cleanText(material.description);
       if (!quantity || !unit || !description) continue;
 
@@ -138,35 +167,85 @@ function materialSections(route, materials) {
     }
 
     for (const [client, group] of clientGroups) {
-      const name = destination.toLocaleUpperCase('pt-PT');
+      const name = DESTINATION_HEADINGS.get(destination) ?? destination;
       const heading = client ? `${name} / ${client}` : name;
       const lines = Array.from(group.values(), formatMaterialLine);
-      sections.push([heading, '-'.repeat(heading.length), ...lines].join('\n'));
+      sections.push([`-${heading}:`, ...lines].join('\n\n'));
     }
   }
   return sections;
 }
 
 function formatMaterialLine({ quantity, unit, description, notes }) {
-  const line = `- ${formatQuantity(quantity)} ${unit} - ${description}`;
+  const amount = formatQuantity(quantity);
+  const line = `-${amount} ${formatUnit(unit, amount)} ${description}`;
   if (!notes) return line;
   if (notes.startsWith('(') && notes.endsWith(')')) return `${line} ${notes}`;
   return `${line} (${notes})`;
 }
 
+function routePhrases(route) {
+  const first = route[0];
+  if (route.length < 2) {
+    return {
+      pt: `com descarga em ${first ?? '[rota]'}.`,
+      fr: `avec un déchargement à ${first ?? '[itinéraire]'}.`,
+    };
+  }
+
+  const last = route.at(-1);
+  const intermediate = route.slice(1, -1);
+  const portugueseContinuation = intermediate.length
+    ? `De seguida segue para ${new Intl.ListFormat('pt-PT').format(intermediate)} e, por fim, para ${last}.`
+    : `De seguida segue para ${last}.`;
+  const frenchContinuation = intermediate.length
+    ? `Il se dirigera ensuite vers ${new Intl.ListFormat('fr-FR').format(intermediate)}, pour finir à ${last}.`
+    : `Il se dirigera ensuite vers ${last}.`;
+  return {
+    pt: `com primeira descarga em ${first}.\n\n${portugueseContinuation}`,
+    fr: `avec un premier déchargement à ${first}.\n\n${frenchContinuation}`,
+  };
+}
+
+function formatIntroduction(introduction, date, route) {
+  const text = cleanText(introduction).replace(/\r\n?/g, '\n');
+  if (!text) return '';
+
+  // Preserve paragraph breaks within each language and accept the earlier one-newline template.
+  const divider = /\n[\n\t ]*(?=Bonjour\b)/i.exec(text)
+    ?? /\n(?:[ \t]*\n){2,}/.exec(text)
+    ?? /\n[ \t]*\n/.exec(text);
+  const portuguese = (divider ? text.slice(0, divider.index).trim() : text) || PORTUGUESE_INTRODUCTION;
+  const french = (divider ? text.slice(divider.index + divider[0].length).trim() : '') || FRENCH_INTRODUCTION;
+
+  const render = (paragraph, values, missingDate, missingRoute) => {
+    const rendered = paragraph.replace(/\{\{(data|rota)\}\}/g, (_, key) => values[key]);
+    return [
+      rendered,
+      paragraph.includes('{{data}}') ? '' : missingDate,
+      paragraph.includes('{{rota}}') ? '' : missingRoute,
+    ].filter(Boolean).join('\n\n');
+  };
+
+  const dateParts = hasValidDate(date) ? date.split('-').reverse() : null;
+  const phrases = routePhrases(route);
+  const pt = { data: dateParts?.join('-') ?? '[data]', rota: phrases.pt };
+  const fr = { data: dateParts?.join('/') ?? '[date]', rota: phrases.fr };
+  return [
+    render(portuguese, pt, `O carregamento está previsto para ${pt.data}.`, `O camião segue ${pt.rota}`),
+    render(french, fr, `Le chargement est prévu le ${fr.data}.`, `Le camion part ${fr.rota}`),
+  ].join(BLOCK_SEPARATOR);
+}
+
 export function buildPackingList({ date, route, materials, introduction = DEFAULT_INTRODUCTION, demo = false }) {
-  const intro = cleanText(introduction).replace(/\r\n?/g, '\n');
-  const loadingDate = hasValidDate(date) ? date.split('-').reverse().join('/') : 'Por indicar';
-  const routeText = route.length ? route.join(' → ') : 'Por selecionar';
   const sections = [
     demo ? 'DEMONSTRAÇÃO — DADOS FICTÍCIOS' : '',
-    intro,
-    `Rota: ${routeText}\nData de carga: ${loadingDate}`,
+    formatIntroduction(introduction, date, route),
     ...materialSections(route, materials),
     'Obrigado / Merci',
   ];
 
-  return `${sections.filter(Boolean).join('\n\n')}\n`;
+  return `${sections.filter(Boolean).join(BLOCK_SEPARATOR)}\n`;
 }
 
 export function packingListFilename(date) {

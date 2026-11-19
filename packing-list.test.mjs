@@ -84,15 +84,46 @@ test('totals keep different units separate and add decimal quantities exactly', 
 test('TXT renders bilingual greetings, ordered sections and complete material details', () => {
   const text = buildPackingList({
     ...shipment,
-    route: ['Lyon', 'Paris'],
-    materials: [material, { ...material, destination: 'Lyon', client: 'Atelier Émile', notes: '(encosto)' }],
+    route: ['Valence', 'Lyon / Armazém A', 'Paris', 'Thionville'],
+    materials: [
+      material,
+      { ...material, destination: 'Lyon / Armazém A', client: 'Atelier Émile', notes: '(encosto)' },
+      { ...material, destination: 'Valence' },
+      { ...material, destination: 'Thionville' },
+    ],
   });
-  assert.match(text, /^Bom dia\. Segue abaixo .+ camião\.\nBonjour, veuillez trouver .+ camion\./);
-  assert.match(text, /Rota: Lyon → Paris\nData de carga: 19\/11\/2026/);
-  assert.ok(text.indexOf('\nLYON / Atelier Émile\n') < text.indexOf('\nPARIS\n'));
-  assert.ok(text.includes(`- 2 un - ${material.description} (stock)`));
-  assert.ok(text.includes(`- 2 un - ${material.description} (encosto)`));
-  assert.ok(text.endsWith('\n\nObrigado / Merci\n'));
+  assert.equal(text, [
+    'Bom dia,\n\nEnvio o Packing List do camião do dia 19-11-2026, com primeira descarga em Valence.\n\nDe seguida segue para Lyon / Armazém A e Paris e, por fim, para Thionville.',
+    'Bonjour,\n\nJe vous transmets la liste de colisage du camion du 19/11/2026, avec un premier déchargement à Valence.\n\nIl se dirigera ensuite vers Lyon / Armazém A et Paris, pour finir à Thionville.',
+    ...[
+      ['VALENCE / PORTES-LES-VALENCE', 'stock'],
+      ['Lyon / Armazém A / Atelier Émile', 'encosto'],
+      ['PARIS / BOISSY-SAINT-LEGER', 'stock'],
+      ['THIONVILLE', 'stock'],
+    ].map(([heading, notes]) => `-${heading}:\n\n-2 un ${material.description} (${notes})`),
+    'Obrigado / Merci\n',
+  ].join('\n\n\n'));
+});
+
+test('one-stop and two-stop routes have complete sentences in both languages', () => {
+  const one = buildPackingList(shipment);
+  assert.match(one, /do dia 19-11-2026, com descarga em Paris\./);
+  assert.match(one, /du 19\/11\/2026, avec un déchargement à Paris\./);
+  const two = buildPackingList({ ...shipment, route: ['Thionville', 'Paris'] });
+  assert.match(two, /com primeira descarga em Thionville\.\n\nDe seguida segue para Paris\./);
+  assert.match(two, /avec un premier déchargement à Thionville\.\n\nIl se dirigera ensuite vers Paris\./);
+});
+
+test('custom PT and FR introductions keep the edited wording and resolve or supply dates and routes', () => {
+  const text = buildPackingList({
+    ...shipment,
+    introduction: 'Olá,\r\n\r\nConfirmamos a expedição de {{data}}.\r\n\r\n\r\nSalutations,\r\n\r\nNous confirmons le départ, {{rota}}',
+  });
+  assert.ok(text.startsWith([
+    'Olá,\n\nConfirmamos a expedição de 19-11-2026.\n\nO camião segue com descarga em Paris.',
+    'Salutations,\n\nNous confirmons le départ, avec un déchargement à Paris.\n\nLe chargement est prévu le 19/11/2026.',
+    '-PARIS / BOISSY-SAINT-LEGER:',
+  ].join('\n\n\n')));
 });
 
 test('TXT sums only materials with matching destination, client, unit, description and notes', () => {
@@ -110,20 +141,51 @@ test('TXT sums only materials with matching destination, client, unit, descripti
       { ...material, destination: 'Valence' },
     ],
   });
-  const lines = text.split('\n').filter((line) => line.startsWith('- '));
+  const lines = text.split('\n').filter((line) => /^-\d/.test(line));
   assert.deepEqual(lines, [
-    `- 3 un - ${material.description} (stock)`,
-    `- 2 un - ${material.description} (encosto)`,
-    `- 2 un - ${material.description.replace('2 cm', '3 cm')} (stock)`,
-    `- 2 m² - ${material.description} (stock)`,
-    `- 2 un - ${material.description} (stock)`,
-    `- 2 un - ${material.description} (stock)`,
+    `-3 un ${material.description} (stock)`,
+    `-2 un ${material.description} (encosto)`,
+    `-2 un ${material.description.replace('2 cm', '3 cm')} (stock)`,
+    `-2 m² ${material.description} (stock)`,
+    `-2 un ${material.description} (stock)`,
+    `-2 un ${material.description} (stock)`,
+  ]);
+  assert.ok(text.includes(`${lines[0]}\n\n${lines[1]}`));
+});
+
+test('explicit material units agree with exact or aggregated quantities and custom units remain intact', () => {
+  const materials = [
+    { ...material, quantity: '1,00', unit: 'chapas', description: 'Branco Encosto 1,2 cm' },
+    { ...material, quantity: '1', unit: 'Chapa' },
+    { ...material, quantity: '2', unit: 'CHAPAS' },
+    { ...material, quantity: '0,40', unit: 'Palete' },
+    { ...material, quantity: '0,6', unit: 'paletes' },
+    { ...material, quantity: '1', unit: 'Ladrilhos' },
+    { ...material, quantity: '2', unit: 'ladrilho', notes: 'Cliente 6723' },
+    { ...material, quantity: '2', unit: 'cx.', description: 'Chapas Comerciais A-17' },
+  ];
+  const text = buildPackingList({ ...shipment, materials });
+  const lines = text.split('\n').filter((line) => /^-\d/.test(line));
+  assert.deepEqual(lines, [
+    '-1 Chapa Branco Encosto 1,2 cm (stock)',
+    `-3 Chapas ${material.description} (stock)`,
+    `-1 Palete ${material.description} (stock)`,
+    `-1 Ladrilho ${material.description} (stock)`,
+    `-2 Ladrilhos ${material.description} (Cliente 6723)`,
+    '-2 cx. Chapas Comerciais A-17 (stock)',
+  ]);
+  assert.deepEqual(materialTotals(materials), [
+    { unit: 'Chapas', quantity: '4' },
+    { unit: 'Palete', quantity: '1' },
+    { unit: 'Ladrilhos', quantity: '3' },
+    { unit: 'cx.', quantity: '2' },
   ]);
 });
 
 test('draft preview tolerates an unfinished form and marks fictitious examples', () => {
   const preview = buildPackingList({ date: '', route: [], materials: [material], demo: true });
-  assert.match(preview, /^DEMONSTRAÇÃO — DADOS FICTÍCIOS\n\nBom dia\./);
-  assert.match(preview, /Rota: Por selecionar\nData de carga: Por indicar/);
+  assert.match(preview, /^DEMONSTRAÇÃO — DADOS FICTÍCIOS\n\n\nBom dia,/);
+  assert.ok(preview.includes('do dia [data], com descarga em [rota].'));
+  assert.ok(preview.includes('du [date], avec un déchargement à [itinéraire].'));
   assert.ok(!preview.includes(material.description));
 });

@@ -330,7 +330,6 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 
 .intro-card textarea {
   min-height: 80px;
-  height: 80px;
   margin-top: 8px;
 }
 
@@ -870,7 +869,6 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   }
 
   .intro-card textarea {
-    min-height: 8.5rem;
     font-size: 1rem;
   }
 
