@@ -1,4 +1,4 @@
-# Granitrans — Packing List v0.1
+# Granitrans — Packing List
 
 Aplicação web para preparar, conferir e exportar packing lists para os armazéns em França. Usa HTML, CSS e JavaScript, com ícones servidos localmente. Requer um navegador moderno.
 
@@ -15,7 +15,7 @@ Abra `http://localhost:8000/granitrans-packing-lists/`. Se a cópia local tiver 
 ## Preparar uma expedição
 
 1. Confirme a data de carregamento. Toque nos destinos pela ordem da rota. Pode retirar um destino e voltar a selecioná-lo para o colocar no fim. Use **Outro destino/armazém** para introduzir os nomes adicionais.
-2. Selecione guias JPG, PNG ou PDF, ou fotografe cada guia com a opção **Fotografar guia**. Pode remover ficheiros antes de exportar. As guias ficam na memória do separador durante a sessão.
+2. Selecione guias JPG, PNG ou PDF, ou fotografe cada guia com a opção **Fotografar guia**. Pode remover ficheiros antes de exportar. As guias ficam na memória do separador durante a sessão. Se a leitura assistida estiver ativa, pode analisar as guias, rever as sugestões e escolher as linhas que pretende aplicar.
 3. Adicione os materiais no cartão de cada destino. Registe as designações, acabamentos, referências e observações nos campos correspondentes. A revisão mostra totais separados por unidade. No TXT, só são somadas linhas com o mesmo destino, unidade, descrição completa e observações.
 4. Reveja a pré-visualização e selecione **Aprovar TXT**. Use **Gerar TXT** para descarregar o ficheiro em UTF-8. Qualquer alteração à data, à rota, à introdução ou aos materiais exige nova aprovação.
 5. Use **Partilhar TXT** quando o navegador num contexto seguro suportar partilha de ficheiros. Para enviar por email, a alternativa **Partilhar por email** prepara uma mensagem para `mralo@granitrans.pt`. Anexe o TXT descarregado se o cliente de email não o tiver recebido através da partilha e envie a mensagem no próprio cliente.
@@ -27,11 +27,15 @@ O botão **Carregar dados fictícios** está disponível numa expedição vazia.
 - `index.html` e `styles.css` definem a interface responsiva.
 - `app.mjs` gere a sessão, a revisão, a exportação e a partilha.
 - `packing-list.mjs` contém as regras de rota, validação, agregação e geração de texto.
-- `guides.mjs` verifica os ficheiros selecionados e devolve objetos `File` para a sessão da interface. Uma futura integração poderá passar esses ficheiros, após ação explícita, a um serviço autenticado do lado do servidor. As credenciais do serviço e a validação dos ficheiros recebidos pertencem ao servidor. A versão atual trabalha localmente e não faz pedidos a uma API.
+- `guides.mjs` verifica os ficheiros selecionados e devolve objetos `File` para a sessão da interface.
+- `worker/` contém o serviço separado para autenticar, limitar e analisar guias. A configuração inicial em `extraction-config.mjs` deixa a leitura desativada. A edição manual continua disponível.
 
-Execute os testes com Node.js 20 ou posterior:
+Para configurar contas, credenciais, custos e primeiros testes, consulte o [manual de ativação da leitura de guias](docs/ativar-extracao.md).
+
+Com Node.js 20 ou posterior, instale as dependências do Worker e execute os testes locais. Os fornecedores externos são simulados.
 
 ```sh
+npm ci --prefix worker
 node --test
 ```
 

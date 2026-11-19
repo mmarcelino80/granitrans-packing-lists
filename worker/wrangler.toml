@@ -1,0 +1,24 @@
+name = "granitrans-packing-list-extraction"
+main = ".generated/index.mjs"
+compatibility_date = "2026-11-19"
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = false
+
+[vars]
+EXTRACTION_ENABLED = "false"
+APP_ORIGIN = ""
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+QUOTA_PER_USER_DAILY = "10"
+QUOTA_GLOBAL_DAILY = "20"
+
+[[durable_objects.bindings]]
+name = "USAGE_QUOTA"
+class_name = "QuotaCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaCounter"]

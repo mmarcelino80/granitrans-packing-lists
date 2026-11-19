@@ -1003,6 +1003,37 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   }
 }
 
+.material-source {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+#extraction-review {
+  margin-top: 12px;
+}
+
+.review-detail, #review-totals {
+  margin-top: 8px;
+}
+
+.review-detail summary {
+  min-height: 32px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.review-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.review-fields input {
+  margin-top: 4px;
+}
+
 @media (max-width: 360px) {
   .export-actions {
     grid-template-columns: 1fr;
