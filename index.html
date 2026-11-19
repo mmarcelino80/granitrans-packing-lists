@@ -92,7 +92,12 @@
         </div>
         <ul id="file-list" class="file-list" aria-label="Ficheiros anexados" hidden></ul>
         <p id="file-error" class="field-error" role="alert" hidden></p>
-        <p class="helper-text">As guias ficam neste dispositivo durante a sessão. Introduza os materiais manualmente.</p>
+        <p id="guides-processing-note" class="helper-text">As guias ficam neste dispositivo durante a sessão. Introduza os materiais manualmente.</p>
+        <div id="analysis-actions" class="materials-tools" hidden>
+          <button id="analyze-guides" type="button" class="outline" disabled>Analisar guias</button>
+          <button id="continue-manual" type="button" class="outline" hidden>Conferir guias manualmente</button>
+        </div>
+        <p id="analysis-status" class="helper-text" role="status" hidden></p>
       </section>
 
       <section class="card materials-card" id="materials" tabindex="-1" aria-labelledby="materials-heading">
@@ -100,11 +105,24 @@
           <svg class="icon" aria-hidden="true"><use href="./assets/app-icons.svg#list-ul"></use></svg>
           Materiais
         </h2>
+        <section id="extraction-review" aria-labelledby="review-heading" hidden>
+          <h3 id="review-heading">Conferir análise das guias</h3>
+          <p class="helper-text">Verifique as linhas e os totais na guia de origem antes de os acrescentar à expedição.</p>
+          <div id="review-rows" class="material-groups"></div>
+          <div id="review-totals" class="helper-text"></div>
+          <ul id="review-issues" class="file-list" aria-label="Divergências na análise"></ul>
+          <datalist id="review-destinations"></datalist>
+          <div class="materials-tools">
+            <button id="apply-review" class="outline" type="button">Acrescentar materiais revistos</button>
+            <button id="discard-review" class="outline" type="button">Descartar análise</button>
+          </div>
+        </section>
         <p id="materials-empty" class="empty-state">Selecione os destinos da rota para começar a adicionar materiais.</p>
         <div class="material-groups" id="material-groups"></div>
         <div class="materials-tools">
           <button id="load-demo" type="button" class="outline">Carregar dados fictícios</button>
           <button id="clear-demo" type="button" class="outline" hidden>Limpar dados fictícios</button>
+          <button id="confirm-extracted-edits" type="button" class="outline" hidden>Confirmar nova conferência das guias</button>
         </div>
         <p id="demo-warning" class="demo-warning" role="status" hidden>Modo de demonstração. Os materiais são fictícios e a exportação e a partilha estão desativadas.</p>
         <datalist id="units">

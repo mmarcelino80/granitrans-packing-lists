@@ -159,7 +159,10 @@ function materialSections(route, materials) {
       const notes = cleanText(material.notes);
       if (!clientGroups.has(client)) clientGroups.set(client, new Map());
       const group = clientGroups.get(client);
-      const key = JSON.stringify([unit, description, notes]);
+      const key = JSON.stringify([
+        unit, description, notes, cleanText(material.commercialName), cleanText(material.thickness),
+        cleanText(material.finish), cleanText(material.reference), cleanText(material.unloadingLocation),
+      ]);
       const existing = group.get(key);
       if (existing) {
         existing.quantity = addQuantities(existing.quantity, quantity);
