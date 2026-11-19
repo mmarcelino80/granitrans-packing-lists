@@ -67,6 +67,16 @@ test('approval rejects missing info, calendar overflow and incomplete material l
   }
 });
 
+test('approval remains blocked in demonstration mode even after all materials have been replaced', () => {
+  const demo = { ...shipment, demo: true, materials: [{ ...material, demo: true }] };
+  const manual = { ...material, description: 'Peça de teste introduzida manualmente' };
+  assert.deepEqual(validatePackingList(demo), ['Saia do modo de demonstração para aprovar o TXT.']);
+  assert.deepEqual(validatePackingList({ ...demo, materials: [manual] }), [
+    'Saia do modo de demonstração para aprovar o TXT.',
+  ]);
+  assert.deepEqual(validatePackingList({ ...demo, demo: false, materials: [manual] }), []);
+});
+
 test('totals keep different units separate and add decimal quantities exactly', () => {
   const materials = [
     material,

@@ -20,7 +20,7 @@ Abra `http://localhost:8000/granitrans-packing-lists/`. Se a cópia local tiver 
 4. Reveja a pré-visualização e selecione **Aprovar TXT**. Use **Gerar TXT** para descarregar o ficheiro em UTF-8. Qualquer alteração à data, à rota, à introdução ou aos materiais exige nova aprovação.
 5. Use **Partilhar TXT** quando o navegador num contexto seguro suportar partilha de ficheiros. Para enviar por email, a alternativa **Partilhar por email** prepara uma mensagem para `mralo@granitrans.pt`. Anexe o TXT descarregado se o cliente de email não o tiver recebido através da partilha e envie a mensagem no próprio cliente.
 
-O botão **Carregar dados fictícios** preenche uma amostra quando a lista de materiais está vazia. A interface e o TXT identificam esses dados como demonstração. Atualizar ou fechar a página limpa a sessão.
+O botão **Carregar dados fictícios** está disponível numa expedição vazia. Durante a demonstração, a interface e a pré-visualização identificam os dados fictícios e os controlos de aprovação, exportação e partilha ficam desativados. **Limpar dados fictícios** pede confirmação antes de descartar as alterações da demonstração e abrir uma expedição vazia. Atualizar ou fechar a página limpa a sessão.
 
 ## Código e testes
 
@@ -34,6 +34,8 @@ Execute os testes com Node.js 20 ou posterior:
 ```sh
 node --test
 ```
+
+Os testes de navegador usam Python e Playwright com Chromium. Com essas dependências instaladas, execute `python3 -B -m unittest discover -s tests -v`. Os testes servem a aplicação no caminho `/granitrans-packing-lists/`.
 
 Os ícones são do Bootstrap Icons 1.13.1, com a licença em `assets/bootstrap-icons.LICENSE`.
 

@@ -18,7 +18,9 @@ const state = {
   guides: [],
   materials: [],
   approved: null,
+  demo: false,
 };
+let emptyDate = localDateValue();
 const recipient = 'mralo@granitrans.pt';
 const demoMaterials = [
   { destination: 'Paris', quantity: '12', unit: 'un', description: 'Bancadas Série Alpha 2 cm, polido', notes: 'stock' },
@@ -66,8 +68,20 @@ function documentData() {
     introduction: ui.introduction.value,
     route: state.route,
     materials: state.materials,
-    demo: state.materials.some((material) => material.demo),
+    demo: state.demo,
   };
+}
+
+function canLoadDemo() {
+  return !state.demo && !state.route.length && !state.customDestinations.length
+    && !state.guides.length && !state.materials.length && !ui['custom-name'].value
+    && ui.date.value === emptyDate && ui.introduction.value === DEFAULT_INTRODUCTION;
+}
+
+function renderDemoControls() {
+  ui['demo-warning'].hidden = !state.demo;
+  ui['clear-demo'].hidden = !state.demo;
+  ui['load-demo'].hidden = !canLoadDemo();
 }
 
 function renderRoute() {
@@ -126,6 +140,7 @@ function renderGuides() {
     item.append(icon('file-earmark-text'), name, remove);
     return item;
   }));
+  renderDemoControls();
 }
 
 function attachGuides(files) {
@@ -223,19 +238,15 @@ function renderMaterials(materialToFocus = null) {
     group.append(footer);
     list.append(group);
   }
-  const hasDemo = documentData().demo;
-  ui['demo-warning'].hidden = !hasDemo;
-  ui['clear-demo'].hidden = !hasDemo;
-  ui['load-demo'].hidden = state.materials.length > 0;
   focusedInput?.focus();
 }
 
 function approvalControls() {
-  const { approved } = state;
+  const approved = state.demo ? null : state.approved;
   const canShare = approved && supportsFileShare(approved.file);
-  ui['preview-status'].textContent = approved ? 'Aprovado' : 'Em tempo real';
+  ui['preview-status'].textContent = state.demo ? 'Demonstração' : approved ? 'Aprovado' : 'Em tempo real';
   ui['preview-status'].classList.toggle('is-approved', Boolean(approved));
-  ui.approve.disabled = Boolean(approved);
+  ui.approve.disabled = state.demo || Boolean(approved);
   ui.download.disabled = !approved;
   ui.share.disabled = !approved;
   ui['share-label'].textContent = canShare ? 'Partilhar TXT' : 'Partilhar por email';
@@ -249,17 +260,18 @@ function refreshDocument() {
   ui['txt-preview'].textContent = buildPackingList(documentData());
   ui['validation-errors'].replaceChildren();
   ui['validation-errors'].hidden = true;
-  setMessage(ui['share-feedback'], '');
+  setMessage(ui['share-feedback'], state.demo ? 'A exportação e a partilha estão indisponíveis na demonstração.' : '');
+  renderDemoControls();
   approvalControls();
 }
 
-function createEmail(date, demo) {
+function createEmail(date) {
   const dateLabel = date.split('-').reverse().join('/');
-  const subject = `${demo ? '[Demonstração] ' : ''}Packing List — ${dateLabel}`;
+  const subject = `Packing List — ${dateLabel}`;
   const body = [
     'Bom dia,',
     '',
-    demo ? 'Segue em anexo a Packing List de demonstração, com dados fictícios.' : 'Segue em anexo a Packing List do carregamento de ' + dateLabel + '.',
+    'Segue em anexo a Packing List do carregamento de ' + dateLabel + '.',
     '',
     'Obrigado / Merci',
   ].join('\r\n');
@@ -279,7 +291,7 @@ function approveDocument() {
 
   const text = buildPackingList(data);
   const file = new File([text], packingListFilename(data.date), { type: 'text/plain' });
-  state.approved = { file, email: createEmail(data.date, data.demo) };
+  state.approved = { file, email: createEmail(data.date) };
   approvalControls();
   const feedback = supportsFileShare(file)
     ? 'TXT aprovado. No menu de partilha, se escolher email, indique mralo@granitrans.pt.'
@@ -289,7 +301,7 @@ function approveDocument() {
 }
 
 function downloadDocument() {
-  if (!state.approved) return;
+  if (state.demo || !state.approved) return;
   const file = state.approved.file;
   const url = URL.createObjectURL(file);
   const link = element('a');
@@ -311,7 +323,7 @@ function supportsFileShare(file) {
 
 async function shareDocument() {
   const approval = state.approved;
-  if (!approval) return;
+  if (state.demo || !approval) return;
   if (supportsFileShare(approval.file)) {
     try {
       await navigator.share({ files: [approval.file], title: 'Packing List' });
@@ -329,7 +341,7 @@ async function shareDocument() {
   ui['email-link'].click();
 }
 
-ui.date.value = localDateValue();
+ui.date.value = emptyDate;
 ui.introduction.value = DEFAULT_INTRODUCTION;
 ui.date.addEventListener('input', refreshDocument);
 ui.introduction.addEventListener('input', refreshDocument);
@@ -347,6 +359,7 @@ ui['custom-destination'].addEventListener('submit', addDestination);
 ui['custom-name'].addEventListener('input', () => {
   setMessage(ui['custom-error'], '');
   ui['custom-name'].removeAttribute('aria-invalid');
+  renderDemoControls();
 });
 
 for (const input of [ui.guides, ui.camera]) {
@@ -363,20 +376,41 @@ for (const type of ['dragover', 'drop']) {
 }
 
 ui['load-demo'].addEventListener('click', () => {
-  for (const destination of DEFAULT_DESTINATIONS) {
-    if (!state.route.includes(destination)) state.route.push(destination);
-  }
-  state.materials.push(...demoMaterials.map((material) => ({ ...material, demo: true })));
+  if (!canLoadDemo()) return;
+  state.demo = true;
+  state.route = [...DEFAULT_DESTINATIONS];
+  state.materials = demoMaterials.map((material) => ({ ...material }));
   renderRoute();
   renderMaterials();
   refreshDocument();
   ui['clear-demo'].focus();
 });
 ui['clear-demo'].addEventListener('click', () => {
-  state.materials = state.materials.filter((material) => !material.demo);
+  if (!state.demo || !window.confirm(
+    'Limpar a demonstração e começar uma expedição vazia? As alterações e os ficheiros desta demonstração serão eliminados.',
+  )) return;
+
+  state.demo = false;
+  state.route = [];
+  state.customDestinations = [];
+  state.guides = [];
+  state.materials = [];
+  emptyDate = localDateValue();
+  ui.date.value = emptyDate;
+  ui.introduction.value = DEFAULT_INTRODUCTION;
+  ui['custom-name'].value = '';
+  ui['custom-name'].removeAttribute('aria-invalid');
+  ui['custom-destination'].hidden = true;
+  ui['custom-toggle'].setAttribute('aria-expanded', 'false');
+  ui['custom-list'].replaceChildren();
+  ui['custom-list'].hidden = true;
+  setMessage(ui['custom-error'], '');
+  setMessage(ui['file-error'], '');
+  renderRoute();
+  renderGuides();
   renderMaterials();
   refreshDocument();
-  (ui['load-demo'].hidden ? ui.materials : ui['load-demo']).focus();
+  ui['load-demo'].focus();
 });
 
 ui.approve.addEventListener('click', approveDocument);

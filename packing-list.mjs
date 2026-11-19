@@ -98,7 +98,9 @@ function formatUnit(unit, quantity) {
   return forms && quantity !== '1' ? forms[1] : unit;
 }
 
-export function validatePackingList({ date, route, materials, introduction = DEFAULT_INTRODUCTION }) {
+export function validatePackingList({ date, route, materials, introduction = DEFAULT_INTRODUCTION, demo = false }) {
+  if (demo) return ['Saia do modo de demonstração para aprovar o TXT.'];
+
   const errors = [];
 
   if (!hasValidDate(date)) errors.push('Indique uma data de carregamento válida.');
