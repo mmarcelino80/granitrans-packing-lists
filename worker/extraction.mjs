@@ -47,6 +47,13 @@ function invalidExtraction() {
   return new ExtractionError(502, 'invalid_extraction', 'A extração não devolveu dados completos e verificáveis. Tente dividir a guia ou reveja-a manualmente.');
 }
 
+function unknownResult(signal) {
+  if (signal.aborted) {
+    return new ExtractionError(504, 'extraction_timeout', 'O tempo limite da leitura foi atingido. Não foi possível confirmar o resultado.');
+  }
+  return new ExtractionError(502, 'extraction_transport', 'A ligação ao serviço foi interrompida. Não foi possível confirmar o resultado.');
+}
+
 function invalidImage() {
   return new ExtractionError(422, 'invalid_image', 'A imagem está incompleta ou inválida. Abra a guia e volte a guardá-la como JPG ou PNG.');
 }
@@ -368,8 +375,7 @@ export async function extractDocument({ id, name, bytes, mimeType }, { apiKey, f
       signal,
     });
   } catch {
-    if (signal.aborted) throw new ExtractionError(504, 'extraction_timeout', 'O tempo limite da leitura foi atingido. Tente novamente com menos páginas.');
-    throw new ExtractionError(502, 'extraction_failed', 'O serviço de leitura não está disponível. Tente novamente ou introduza os materiais manualmente.');
+    throw unknownResult(signal);
   }
 
   if (!response.ok) {
@@ -377,17 +383,22 @@ export async function extractDocument({ id, name, bytes, mimeType }, { apiKey, f
     if (response.status === 429) {
       throw new ExtractionError(503, 'extraction_busy', 'O serviço de leitura está ocupado. Tente novamente mais tarde.');
     }
-    throw new ExtractionError(502, 'extraction_failed', 'O serviço de leitura não aceitou a guia. Tente novamente ou introduza os materiais manualmente.');
+    throw new ExtractionError(502, 'extraction_rejected', 'O serviço de leitura não aceitou a guia. Tente novamente ou introduza os materiais manualmente.');
   }
 
+  if (!response.body) throw invalidExtraction();
+  let responseBytes;
   try {
-    if (!response.body) throw invalidExtraction();
-    const bytes = await readBoundedBytes(response.body, MAX_RESPONSE_BYTES, invalidExtraction);
-    const body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    responseBytes = await readBoundedBytes(response.body, MAX_RESPONSE_BYTES, invalidExtraction);
+  } catch (error) {
+    if (error instanceof ExtractionError) throw error;
+    throw unknownResult(signal);
+  }
+  try {
+    const body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(responseBytes));
     return { id, name, ...parseDocument(body, expectedPages) };
   } catch (error) {
     if (error instanceof ExtractionError) throw error;
-    if (signal.aborted) throw new ExtractionError(504, 'extraction_timeout', 'O tempo limite da leitura foi atingido. Tente novamente com menos páginas.');
     throw invalidExtraction();
   }
 }

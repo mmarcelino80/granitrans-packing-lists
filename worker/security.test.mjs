@@ -154,22 +154,26 @@ function quotaBinding(options, initial = []) {
   return { entries, binding };
 }
 
+function attempt(documentId = 'a'.repeat(64), requestId = crypto.randomUUID()) {
+  return { documentId, requestId };
+}
+
 test('reserves quotas for authorized accounts with atomic global and per-user limits', async () => {
   const options = { ...env, QUOTA_PER_USER_DAILY: '2', QUOTA_GLOBAL_DAILY: '3' };
   const { entries, binding } = quotaBinding(options);
   options.USAGE_QUOTA = binding;
 
   const results = await Promise.allSettled(
-    Array.from({ length: 4 }, () => reserveQuota(options, 'one@example.com')),
+    Array.from({ length: 4 }, () => reserveQuota(options, 'one@example.com', attempt())),
   );
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 2);
   for (const result of results.filter(result => result.status === 'rejected')) {
     assert.equal(result.reason.status, 429);
     assert.ok(result.reason.retryAfter > 0 && result.reason.retryAfter <= 86400);
   }
-  await reserveQuota(options, 'two@example.com');
-  await assert.rejects(reserveQuota(options, 'two@example.com'), { status: 429 });
-  await assert.rejects(reserveQuota(options, 'outside@example.com'), { status: 403 });
+  await reserveQuota(options, 'two@example.com', attempt());
+  await assert.rejects(reserveQuota(options, 'two@example.com', attempt()), { status: 429 });
+  await assert.rejects(reserveQuota(options, 'outside@example.com', attempt()), { status: 403 });
 
   const daily = entries.get('daily');
   assert.equal(daily.total, 3);
@@ -177,20 +181,61 @@ test('reserves quotas for authorized accounts with atomic global and per-user li
   assert.ok(Object.keys(daily.users).every(user => /^[A-Za-z0-9_-]{43}$/u.test(user)));
 });
 
+test('admits a concurrent or later repeat only once per account, document and request', async () => {
+  const options = { ...env, QUOTA_PER_USER_DAILY: '4', QUOTA_GLOBAL_DAILY: '4' };
+  const { entries, binding } = quotaBinding(options);
+  options.USAGE_QUOTA = binding;
+  const sameAttempt = attempt();
+  const duplicateError = { status: 409, code: 'duplicate_request' };
+
+  const results = await Promise.allSettled(
+    Array.from({ length: 4 }, () => reserveQuota(options, 'one@example.com', sameAttempt)),
+  );
+  assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 1);
+  for (const result of results.filter(({ status }) => status === 'rejected')) {
+    assert.equal(result.reason.status, duplicateError.status);
+    assert.equal(result.reason.code, duplicateError.code);
+  }
+  await reserveQuota(options, 'two@example.com', sameAttempt);
+  await reserveQuota(options, 'one@example.com', attempt('b'.repeat(64), sameAttempt.requestId));
+  await reserveQuota(options, 'one@example.com', attempt());
+  await assert.rejects(reserveQuota(options, 'one@example.com', sameAttempt), duplicateError);
+  assert.equal(entries.get('daily').total, 4);
+  const stored = JSON.stringify(entries.get('daily'));
+  assert.ok(!stored.includes(sameAttempt.documentId));
+  assert.ok(!stored.includes(sameAttempt.requestId));
+  assert.ok(!stored.includes('one@example.com'));
+});
+
+test('checks previous-day admissions without consuming the new day quota', async () => {
+  const options = { ...env, QUOTA_PER_USER_DAILY: '1', QUOTA_GLOBAL_DAILY: '1' };
+  const { entries, binding } = quotaBinding(options);
+  options.USAGE_QUOTA = binding;
+  const oldAttempt = attempt();
+  await reserveQuota(options, 'one@example.com', oldAttempt);
+  const yesterday = entries.get('daily');
+  entries.set('daily', { ...yesterday, day: yesterday.day - 1 });
+
+  await assert.rejects(reserveQuota(options, 'one@example.com', oldAttempt), { status: 409 });
+  await reserveQuota(options, 'one@example.com', attempt());
+  assert.equal(entries.get('daily').total, 1);
+  await assert.rejects(reserveQuota(options, 'one@example.com', oldAttempt), { status: 409 });
+});
+
 test('resets prior-day quota and fails closed when configuration, binding or storage fails', async () => {
   const options = { ...env, QUOTA_PER_USER_DAILY: '1', QUOTA_GLOBAL_DAILY: '1' };
   const { entries, binding } = quotaBinding(options, [['daily', { day: 0, total: 3, users: {} }]]);
   options.USAGE_QUOTA = binding;
-  await reserveQuota(options, 'one@example.com');
+  await reserveQuota(options, 'one@example.com', attempt());
   assert.equal(entries.get('daily').total, 1);
   assert.ok(entries.get('daily').day > 0);
 
-  await assert.rejects(reserveQuota(env, 'one@example.com'), { status: 503 });
-  await assert.rejects(reserveQuota({ ...options, QUOTA_PER_USER_DAILY: '51' }, 'one@example.com'), { status: 503 });
-  await assert.rejects(reserveQuota({ ...options, QUOTA_GLOBAL_DAILY: '101' }, 'one@example.com'), { status: 503 });
-  await assert.rejects(reserveQuota({ ...options, QUOTA_GLOBAL_DAILY: '0' }, 'one@example.com'), { status: 503 });
+  await assert.rejects(reserveQuota(env, 'one@example.com', attempt()), { status: 503 });
+  await assert.rejects(reserveQuota({ ...options, QUOTA_PER_USER_DAILY: '51' }, 'one@example.com', attempt()), { status: 503 });
+  await assert.rejects(reserveQuota({ ...options, QUOTA_GLOBAL_DAILY: '101' }, 'one@example.com', attempt()), { status: 503 });
+  await assert.rejects(reserveQuota({ ...options, QUOTA_GLOBAL_DAILY: '0' }, 'one@example.com', attempt()), { status: 503 });
   await assert.rejects(reserveQuota({
     ...options,
     USAGE_QUOTA: { ...binding, get: () => { throw new Error('storage failed'); } },
-  }, 'one@example.com'), { status: 503 });
+  }, 'one@example.com', attempt()), { status: 503 });
 });

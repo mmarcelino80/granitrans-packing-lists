@@ -8,11 +8,12 @@ const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder('utf-8', { fatal: true });
 
 export class SecurityError extends Error {
-  constructor(status, message, retryAfter) {
+  constructor(status, message, { retryAfter, code } = {}) {
     super(message);
     this.name = 'SecurityError';
     this.status = status;
     this.retryAfter = retryAfter;
+    this.code = code;
   }
 }
 
@@ -224,24 +225,34 @@ function getLimits(env) {
   return { perUser, global };
 }
 
-export async function reserveQuota(env, email) {
+export async function reserveQuota(env, email, { documentId, requestId }) {
   ensureAllowed(email, env);
   getLimits(env);
   const binding = env.USAGE_QUOTA;
 
   let result;
   try {
-    const hash = await crypto.subtle.digest('SHA-256', ENCODER.encode(email));
+    const [user, attempt] = await Promise.all([
+      crypto.subtle.digest('SHA-256', ENCODER.encode(email)),
+      crypto.subtle.digest('SHA-256', ENCODER.encode(JSON.stringify([email, documentId, requestId]))),
+    ]);
     const quota = binding.get(binding.idFromName(QUOTA_OBJECT));
-    result = await quota.fetch('https://quota.internal/reserve', { method: 'POST', body: encode(new Uint8Array(hash)) });
+    result = await quota.fetch('https://quota.internal/reserve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: encode(new Uint8Array(user)), attempt: encode(new Uint8Array(attempt)) }),
+    });
   } catch {
     throw serviceUnavailable();
   }
 
   if (result.status === 204) return;
+  if (result.status === 409) {
+    throw new SecurityError(409, 'Este pedido já foi aceite. Confira esta guia manualmente para evitar uma cobrança repetida.', { code: 'duplicate_request' });
+  }
   if (result.status === 429) {
     const retryAfter = Math.ceil((DAY - (Date.now() % DAY)) / 1000);
-    throw new SecurityError(429, 'O limite diário de leituras foi atingido. Tente novamente amanhã.', retryAfter);
+    throw new SecurityError(429, 'O limite diário de leituras foi atingido. Tente novamente amanhã.', { retryAfter });
   }
   throw serviceUnavailable();
 }
@@ -256,23 +267,41 @@ export class QuotaCounter {
     if (request.method !== 'POST' || new URL(request.url).pathname !== '/reserve') {
       return new Response(null, { status: 404 });
     }
-    const user = await request.text();
-    if (!/^[A-Za-z0-9_-]{43}$/u.test(user)) return new Response(null, { status: 400 });
+    let identifiers;
+    try {
+      identifiers = await request.json();
+    } catch {
+      return new Response(null, { status: 400 });
+    }
+    const { user, attempt } = identifiers ?? {};
+    const digest = /^[A-Za-z0-9_-]{43}$/u;
+    if (typeof user !== 'string' || typeof attempt !== 'string' || !digest.test(user) || !digest.test(attempt)) {
+      return new Response(null, { status: 400 });
+    }
 
     const limits = getLimits(this.env);
-    const allowed = await this.state.storage.transaction(async transaction => {
+    const status = await this.state.storage.transaction(async transaction => {
       const day = Math.floor(Date.now() / DAY);
       const previous = await transaction.get(QUOTA_KEY);
-      const usage = previous?.day === day ? previous : { day, total: 0, users: {} };
+      const usage = previous?.day === day ? previous : {
+        day,
+        total: 0,
+        users: {},
+        attempts: [],
+        previousAttempts: previous?.day === day - 1 ? previous.attempts ?? [] : [],
+      };
+      usage.attempts ??= [];
+      if (usage.attempts.includes(attempt) || usage.previousAttempts?.includes(attempt)) return 409;
       const count = Object.hasOwn(usage.users, user) ? usage.users[user] : 0;
-      if (count >= limits.perUser || usage.total >= limits.global) return false;
+      if (count >= limits.perUser || usage.total >= limits.global) return 429;
 
       usage.users[user] = count + 1;
       usage.total += 1;
+      usage.attempts.push(attempt);
       await transaction.put(QUOTA_KEY, usage);
-      return true;
+      return 204;
     });
 
-    return new Response(null, { status: allowed ? 204 : 429 });
+    return new Response(null, { status });
   }
 }

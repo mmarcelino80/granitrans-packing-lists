@@ -13,7 +13,7 @@ import { collectGuides } from './guides.mjs';
 import { extractionWorkerUrl } from './extraction-config.mjs';
 import { createExtractionClient } from './extraction-client.mjs';
 import {
-  activeReviewRows, prepareReview, reviewIssues, reviewMaterials, reviewTotals,
+  activeReviewRows, appendReviewDocuments, prepareReview, reviewIssues, reviewMaterials, reviewTotals,
   resolveReviewIssue, excludeReviewRow, excludeReviewDocument,
 } from './review.mjs';
 
@@ -30,8 +30,12 @@ const state = {
   failedAnalysis: false,
   extractedEditsPending: false,
   importedGuides: new Set(),
+  completedGuides: new Map(),
+  guideAttempts: new Map(),
 };
 let emptyDate = localDateValue();
+// The Worker checks the current and previous UTC day. Use the minimum guaranteed window.
+const safeRetryWindow = 24 * 60 * 60 * 1000;
 let extractionClient;
 if (extractionWorkerUrl) {
   ui['analysis-actions'].hidden = false;
@@ -462,8 +466,10 @@ const reviewFields = [
 
 function analysisControls() {
   ui['analyze-guides'].disabled = !extractionClient || state.demo
-    || !state.guides.length || state.analyzing || Boolean(state.review);
+    || !state.guides.length || state.analyzing || Boolean(state.review && !state.failedAnalysis);
   ui['continue-manual'].hidden = !state.failedAnalysis || state.analyzing;
+  ui['discard-review'].disabled = state.analyzing;
+  renderReviewSummary();
 }
 
 function renderReviewSummary() {
@@ -510,12 +516,14 @@ function renderReviewSummary() {
     lines.push(element('p', '', `${where} · guia: ${total.quantity ?? '?'} ${total.unit ?? ''} · calculado: ${total.calculated ?? '?'}`));
   }
   ui['review-totals'].replaceChildren(...lines);
-  ui['apply-review'].disabled = blockers.length > 0 || !activeReviewRows(state.review).length;
+  ui['apply-review'].disabled = state.analyzing || state.failedAnalysis
+    || blockers.length > 0 || !activeReviewRows(state.review).length;
 }
 
 function renderReview() {
   ui['extraction-review'].hidden = !state.review;
   const list = ui['review-rows'];
+  const openRows = new Set(Array.from(list.querySelectorAll('details[open]'), (row) => row.dataset.reviewRow));
   list.replaceChildren();
   if (!state.review) return;
 
@@ -532,6 +540,8 @@ function renderReview() {
       const rows = state.review.rows.filter((row) => row.documentKey === document.key);
       for (const row of rows) {
         const details = element('details', 'review-detail');
+        details.dataset.reviewRow = row.id;
+        details.open = openRows.has(row.id);
         const summary = element('summary', '', `Pág. ${row.page} · ${row.description || row.commercialName || 'Material por rever'}`);
         details.append(summary);
         const toggle = action('outline', row.excluded ? 'Repor linha' : 'Excluir linha');
@@ -581,7 +591,8 @@ function finishAnalysis(message) {
 }
 
 ui['analyze-guides'].addEventListener('click', async () => {
-  if (!extractionClient || state.demo || state.analyzing || state.review || !state.guides.length) return;
+  if (!extractionClient || state.demo || state.analyzing
+    || (state.review && !state.failedAnalysis) || !state.guides.length) return;
   const files = [...state.guides];
   if (files.length > 5) {
     setMessage(ui['analysis-status'], 'Selecione até cinco guias por análise.');
@@ -594,36 +605,75 @@ ui['analyze-guides'].addEventListener('click', async () => {
   setMessage(ui['analysis-status'], 'A analisar as guias selecionadas…');
   try {
     const token = await extractionClient.login();
-    const documents = [];
-    const seen = new Map();
+    const selected = (file) => state.guides.includes(file);
+    const ready = new Map();
+    const failures = new Map();
+    const existing = new Set(state.review?.documents.map(({ id }) => id));
     let skipped = false;
     for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) throw new Error('Cada guia pode ter até 10 MiB.');
-      const bytes = await file.arrayBuffer();
-      const hash = await crypto.subtle.digest('SHA-256', bytes);
-      const id = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
-      if (state.importedGuides.has(id)) {
-        skipped = true;
-        continue;
+      if (!selected(file)) continue;
+      let id;
+      try {
+        if (file.size > 10 * 1024 * 1024) throw new Error('Cada guia pode ter até 10 MiB.');
+        const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        id = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        // No attachment captured before authentication is sent once it has been removed.
+        if (!selected(file)) continue;
+        if (state.importedGuides.has(id) || existing.has(id)) {
+          skipped = true;
+          continue;
+        }
+        if (failures.has(id)) {
+          failures.get(id).files.push(file);
+          skipped = true;
+          continue;
+        }
+        let document = state.completedGuides.get(id);
+        if (!document) {
+          const attempt = state.guideAttempts.get(id) ?? { id: crypto.randomUUID(), startedAt: Date.now() };
+          if (attempt.unavailable) throw new Error(attempt.unavailable);
+          if (Date.now() - attempt.startedAt >= safeRetryWindow) {
+            throw new Error('Não foi possível confirmar a tentativa anterior. Confira esta guia manualmente.');
+          }
+          state.guideAttempts.set(id, attempt);
+          document = await extractionClient.extract(file, token, attempt.id);
+          if (document?.id !== id) throw new Error('A resposta não corresponde à guia selecionada.');
+          state.completedGuides.set(id, document);
+          state.guideAttempts.delete(id);
+        }
+        if (ready.has(id)) skipped = true;
+        else ready.set(id, { document, files: [] });
+        ready.get(id).files.push(file);
+      } catch (error) {
+        const attempt = state.guideAttempts.get(id);
+        if (attempt && error?.alreadyAccepted) attempt.unavailable = error.message;
+        if (attempt && error?.canStartNewAttempt) state.guideAttempts.delete(id);
+        failures.set(id ?? file, {
+          files: [file],
+          message: error instanceof Error ? error.message : 'Não foi possível analisar a guia.',
+        });
       }
-      if (seen.has(id)) {
-        skipped = true;
-        continue;
-      }
-      const document = await extractionClient.extract(file, token);
-      if (document.id !== id) throw new Error('A resposta não corresponde à guia selecionada.');
-      seen.set(id, document);
-      documents.push(document);
     }
+    const documents = [...ready.values()].filter(({ files }) => files.some(selected)).map(({ document }) => document);
+    const pending = [...failures.values()].filter(({ files }) => files.some(selected));
+    state.failedAnalysis = pending.length > 0;
     if (documents.length) {
-      state.review = prepareReview({ documents }, state.route);
+      const firstReview = !state.review;
+      if (firstReview) state.review = prepareReview({ documents }, state.route);
+      else appendReviewDocuments(state.review, documents, state.route);
       renderReview();
-      ui.materials.focus();
+      if (firstReview) ui.materials.focus();
     }
-    const status = documents.length ? 'Guias analisadas. Confira os materiais antes da aprovação.' : 'Nenhuma guia nova para analisar.';
+    let status = state.review ? 'Guias analisadas. Confira os materiais antes da aprovação.' : 'Nenhuma guia nova para analisar.';
+    if (pending.length === 1 && !state.review) {
+      status = pending[0].message;
+    } else if (pending.length) {
+      const detail = pending.map(({ files, message }) => `${files.find(selected).name}: ${message}`).join(' ');
+      status = `Guias por concluir: ${pending.length}. ${detail}`;
+    }
     setMessage(ui['analysis-status'], skipped ? `${status} As cópias idênticas e as guias já importadas foram ignoradas.` : status);
   } catch (error) {
-    state.failedAnalysis = true;
+    state.failedAnalysis = files.some((file) => state.guides.includes(file));
     setMessage(ui['analysis-status'], error instanceof Error ? error.message : 'Não foi possível analisar as guias.');
   } finally {
     state.analyzing = false;
@@ -633,7 +683,7 @@ ui['analyze-guides'].addEventListener('click', async () => {
 });
 
 ui['apply-review'].addEventListener('click', () => {
-  if (!state.review || reviewIssues(state.review, state.route).length) return;
+  if (state.analyzing || state.failedAnalysis || !state.review || reviewIssues(state.review, state.route).length) return;
   const materials = reviewMaterials(state.review, state.route);
   if (!materials.length) return;
   const fingerprint = (material) => JSON.stringify([
@@ -643,21 +693,28 @@ ui['apply-review'].addEventListener('click', () => {
   if (materials.some((material) => existing.has(fingerprint(material))) && !window.confirm(
     'Já existem linhas iguais na expedição. Confirma que estas linhas correspondem a materiais distintos?',
   )) return;
-  for (const row of activeReviewRows(state.review)) state.importedGuides.add(row.documentId);
+  for (const row of activeReviewRows(state.review)) {
+    state.importedGuides.add(row.documentId);
+    state.completedGuides.delete(row.documentId);
+  }
   state.materials.push(...materials);
   finishAnalysis('Os materiais revistos foram acrescentados à expedição.');
   ui.materials.focus();
 });
 
 ui['discard-review'].addEventListener('click', () => {
-  if (!state.review || !window.confirm('Descartar a análise e as correções feitas nesta revisão?')) return;
+  if (state.analyzing || !state.review || !window.confirm('Descartar a análise e as correções feitas nesta revisão?')) return;
+  for (const { id } of state.review.documents) state.completedGuides.delete(id);
   finishAnalysis('Análise descartada. Confira as guias manualmente antes de aprovar.');
   ui['analyze-guides'].focus();
 });
 
 ui['continue-manual'].addEventListener('click', () => {
-  if (!state.failedAnalysis || !window.confirm('Confirmar que vai conferir manualmente as guias sem análise?')) return;
-  finishAnalysis('Conferência manual selecionada.');
+  if (state.analyzing || !state.failedAnalysis || !window.confirm('Confirmar que vai conferir manualmente as guias sem análise?')) return;
+  state.failedAnalysis = false;
+  refreshDocument();
+  analysisControls();
+  setMessage(ui['analysis-status'], 'Conferência manual selecionada para as guias por concluir.');
 });
 
 ui['confirm-extracted-edits'].addEventListener('click', () => {

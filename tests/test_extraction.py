@@ -2,12 +2,14 @@ import base64
 import hashlib
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from http.server import ThreadingHTTPServer
 from shutil import which
 from threading import Thread
 from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
+from zlib import crc32
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -54,6 +56,24 @@ def sample_document(identifier, name):
     }
 
 
+def numbered_guide(number):
+    text = b"Comment\x00" + str(number).encode("ascii")
+    chunk = b"tEXt" + text
+    metadata = len(text).to_bytes(4, "big") + chunk + crc32(chunk).to_bytes(4, "big")
+    return {**GUIDE, "name": f"guia-{number}.png", "buffer": PNG[:-12] + metadata + PNG[-12:]}
+
+
+def distinct_document(identifier, name):
+    document = sample_document(identifier, name)
+    page = document["pages"][0]
+    line = page["lines"][0]
+    line["description"] = f"Quartzo de teste · {name}"
+    page["lines"] = [line]
+    if name != "guia-1.png":
+        document["totals"] = []
+    return document
+
+
 class ExtractionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -78,6 +98,11 @@ class ExtractionTests(unittest.TestCase):
         self.uploads = []
         self.unexpected_requests = []
         self.error_status = None
+        self.delay_login = False
+        self.session_expires_at = None
+        self.upload_outcomes = {}
+        self.pending_uploads = {}
+        self.document_factory = sample_document
         self.context.route("**/*", self.intercept)
         self.configured = True
         self.page = self.context.new_page()
@@ -100,11 +125,13 @@ class ExtractionTests(unittest.TestCase):
                 "type": "granitrans:session",
                 "nonce": nonce,
                 "token": SESSION,
-                "expiresAt": int(time() * 1000) + 15 * 60 * 1000,
+                "expiresAt": self.session_expires_at or int(time() * 1000) + 15 * 60 * 1000,
             }
+            login = f"window.opener.postMessage({json.dumps(payload)}, {json.dumps(self.origin)})"
+            invoke = "" if self.delay_login else "completeLogin();"
             route.fulfill(
                 content_type="text/html",
-                body=f"<script>window.opener.postMessage({json.dumps(payload)}, {json.dumps(self.origin)})</script>",
+                body=f"<script>function completeLogin() {{ {login}; }} {invoke}</script>",
             )
             return
         if request.url == WORKER + "/extract":
@@ -115,23 +142,57 @@ class ExtractionTests(unittest.TestCase):
                     headers={
                         **cors,
                         "Access-Control-Allow-Methods": "POST, OPTIONS",
-                        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Guide-Name",
+                        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Guide-Name, X-Guide-Request",
                     },
                 )
                 return
             if request.method == "POST":
                 raw = request.post_data_buffer
                 self.uploads.append((request.all_headers(), raw))
-                if self.error_status:
-                    route.fulfill(status=self.error_status, headers=cors, json={"error": QUOTA_ERROR})
+                name = unquote(request.header_value("X-Guide-Name"))
+                outcomes = self.upload_outcomes.get(name, [])
+                outcome = outcomes.pop(0) if outcomes else self.error_status
+                if outcome == "hold":
+                    self.pending_uploads[name] = (route, raw)
+                elif outcome == "lost":
+                    route.abort("failed")
                 else:
-                    name = unquote(request.header_value("X-Guide-Name"))
-                    identifier = hashlib.sha256(raw).hexdigest()
-                    document = sample_document(identifier, name)
-                    route.fulfill(headers=cors, json={"documents": [document]})
+                    self.respond_to_upload(route, name, raw, outcome)
                 return
         self.unexpected_requests.append((request.method, request.url))
         route.abort()
+
+    def respond_to_upload(self, route, name, raw, error_status=None):
+        cors = {"Access-Control-Allow-Origin": self.origin}
+        if error_status:
+            message = QUOTA_ERROR if error_status == 429 else "A análise da guia falhou. Tente novamente."
+            payload = {"error": message}
+            if error_status == 502:
+                payload["code"] = "extraction_rejected"
+            if error_status == 409:
+                payload["code"] = "duplicate_request"
+            route.fulfill(status=error_status, headers=cors, json=payload)
+            return
+        identifier = hashlib.sha256(raw).hexdigest()
+        document = self.document_factory(identifier, name)
+        route.fulfill(headers=cors, json={"documents": [document]})
+
+    def remove_guide(self, name):
+        self.page.get_by_role("button", name=f"Remover {name}", exact=True).click()
+        expect(self.page.locator("#file-list")).not_to_contain_text(name)
+
+    def uploaded_names(self):
+        return [unquote(headers["x-guide-name"]) for headers, _ in self.uploads]
+
+    def review_document(self, name):
+        heading = self.page.get_by_role("heading", name=name, exact=True)
+        return self.page.locator("#review-rows section").filter(has=heading)
+
+    def expand_review_row(self, name):
+        row = self.review_document(name).locator("details").first
+        if not row.get_by_label("Quantidade", exact=True).is_visible():
+            row.locator("summary").click()
+        return row
 
     def prepare_manual_material(self):
         page = self.page
@@ -237,3 +298,209 @@ class ExtractionTests(unittest.TestCase):
         expect(page.locator("#extraction-review")).to_be_hidden()
         expect(page.locator("#material-groups .material-row")).to_have_count(0)
         self.assertFalse(self.logins or self.uploads or self.unexpected_requests)
+
+    def test_removing_guide_during_login_excludes_it_and_prevents_a_second_analysis(self):
+        self.delay_login = True
+        self.document_factory = distinct_document
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        first, second = (numbered_guide(number) for number in (1, 2))
+        page.locator("#guides").set_input_files([first, second])
+        trigger = page.locator("#analyze-guides")
+        with page.expect_popup() as popup_info:
+            trigger.click()
+        popup = popup_info.value
+        popup.wait_for_function("typeof completeLogin === 'function'")
+        expect(trigger).to_be_disabled()
+        trigger.dispatch_event("click")
+        self.remove_guide(first["name"])
+        self.assertFalse(self.uploads)
+
+        popup.evaluate("completeLogin()")
+        expect(self.review_document(second["name"])).to_be_visible()
+        expect(self.review_document(first["name"])).to_have_count(0)
+        self.assertEqual(self.uploaded_names(), [second["name"]])
+        self.assertEqual(len(self.logins), 1)
+        self.assertFalse(self.unexpected_requests)
+
+    def test_removing_queued_guide_during_previous_upload_never_sends_it(self):
+        self.document_factory = distinct_document
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        first, removed, last = (numbered_guide(number) for number in (1, 2, 3))
+        self.upload_outcomes[first["name"]] = ["hold"]
+        page.locator("#guides").set_input_files([first, removed, last])
+        with page.expect_request(
+            lambda request: request.url == WORKER + "/extract" and request.method == "POST"
+        ):
+            page.locator("#analyze-guides").click()
+        self.remove_guide(removed["name"])
+        self.assertEqual(self.uploaded_names(), [first["name"]])
+
+        route, raw = self.pending_uploads.pop(first["name"])
+        self.respond_to_upload(route, first["name"], raw)
+        expect(self.review_document(first["name"])).to_be_visible()
+        expect(self.review_document(last["name"])).to_be_visible()
+        expect(self.review_document(removed["name"])).to_have_count(0)
+        self.assertEqual(self.uploaded_names(), [first["name"], last["name"]])
+        self.assertFalse(self.unexpected_requests)
+
+    def test_partial_batch_retries_only_failed_guides_and_preserves_edits(self):
+        self.document_factory = distinct_document
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        guides = [numbered_guide(number) for number in range(1, 6)]
+        names = [guide["name"] for guide in guides]
+        self.upload_outcomes = {names[1]: [502], names[3]: ["lost"]}
+        page.locator("#guides").set_input_files(guides)
+        trigger = page.locator("#analyze-guides")
+        trigger.click()
+
+        expect(page.locator("#continue-manual")).to_be_visible()
+        expect(trigger).to_be_enabled()
+        for failure in (names[1], names[3]):
+            expect(page.locator("#analysis-status")).to_contain_text(failure)
+        expect(page.locator("#review-rows section")).to_have_count(3)
+        for name in (names[0], names[2], names[4]):
+            expect(self.review_document(name)).to_be_visible()
+        self.assertEqual(self.uploaded_names(), names)
+
+        manual = page.locator("#material-groups .material-row").first
+        manual.get_by_label("Descrição", exact=True).fill("Material manual editado")
+        first = self.expand_review_row(names[0])
+        first.get_by_label("Quantidade", exact=True).fill("3")
+        first.get_by_label("Descrição", exact=True).fill("Material extraído editado")
+        issues = page.locator("#review-issues")
+        issues.get_by_role("button", name="Conferido na guia").click()
+        expect(issues.get_by_role("button", name="Conferido na guia")).to_have_count(0)
+        expect(page.locator("#apply-review")).to_be_disabled()
+        expect(page.locator("#approve")).to_be_disabled()
+        expect(page.locator("#download")).to_be_disabled()
+
+        trigger.click()
+        expect(page.locator("#continue-manual")).to_be_hidden()
+        expect(page.locator("#review-rows section")).to_have_count(5)
+        expect(page.locator("#apply-review")).to_be_enabled()
+        self.assertEqual(self.uploaded_names(), names + [names[1], names[3]])
+        self.assertEqual(len(self.logins), 1)
+
+        request_ids = [headers["x-guide-request"] for headers, _ in self.uploads]
+        self.assertEqual(len(set(request_ids[:5])), 5)
+        self.assertNotEqual(request_ids[1], request_ids[5])
+        self.assertEqual(request_ids[3], request_ids[6])
+        first = self.expand_review_row(names[0])
+        expect(first.get_by_label("Quantidade", exact=True)).to_have_value("3")
+        expect(first.get_by_label("Descrição", exact=True)).to_have_value("Material extraído editado")
+        expect(manual.get_by_label("Descrição", exact=True)).to_have_value("Material manual editado")
+        expect(issues.get_by_role("button", name="Conferido na guia")).to_have_count(0)
+        page.locator("#apply-review").click()
+        expect(page.locator("#material-groups .material-row")).to_have_count(6)
+        expect(page.locator("#txt-preview")).to_contain_text("-3 Chapas Material extraído editado")
+        expect(page.locator("#txt-preview")).to_contain_text("Material manual editado")
+        expect(page.locator("#download")).to_be_disabled()
+        page.locator("#approve").click()
+        expect(page.locator("#download")).to_be_enabled()
+        self.assertFalse(self.unexpected_requests)
+
+    def test_unrecoverable_duplicate_keeps_successes_available_for_manual_confirmation(self):
+        self.document_factory = distinct_document
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        accepted, unresolved = (numbered_guide(number) for number in (3, 4))
+        self.upload_outcomes[unresolved["name"]] = ["lost", 409, 409]
+        page.locator("#guides").set_input_files([accepted, unresolved])
+        trigger = page.locator("#analyze-guides")
+        trigger.click()
+
+        manual = page.locator("#continue-manual")
+        apply = page.locator("#apply-review")
+        expect(manual).to_be_visible()
+        expect(self.review_document(accepted["name"])).to_be_visible()
+        expect(apply).to_be_disabled()
+        with page.expect_response(
+            lambda response: response.url == WORKER + "/extract" and response.status == 409
+        ):
+            trigger.click()
+        expect(manual).to_be_visible()
+        expect(self.review_document(accepted["name"])).to_be_visible()
+        expect(apply).to_be_disabled()
+
+        self.assertEqual(self.uploaded_names(), [accepted["name"], unresolved["name"], unresolved["name"]])
+        request_ids = [headers["x-guide-request"] for headers, _ in self.uploads]
+        self.assertEqual(request_ids[1], request_ids[2])
+
+        trigger.dispatch_event("click")
+        expect(manual).to_be_visible()
+        page.once("dialog", lambda dialog: dialog.dismiss())
+        manual.click()
+        expect(apply).to_be_disabled()
+        page.once("dialog", lambda dialog: dialog.accept())
+        manual.click()
+        expect(apply).to_be_enabled()
+        apply.click()
+        expect(page.locator("#material-groups .material-row")).to_have_count(2)
+        expect(page.locator("#txt-preview")).to_contain_text(accepted["name"])
+        expect(page.locator("#txt-preview")).not_to_contain_text(unresolved["name"])
+        self.assertEqual(self.uploaded_names(), [accepted["name"], unresolved["name"], unresolved["name"]])
+        self.assertFalse(self.unexpected_requests)
+
+    def test_unconfirmed_request_is_not_retransmitted_after_deduplication_window(self):
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        self.upload_outcomes[GUIDE["name"]] = ["lost"]
+        page.locator("#guides").set_input_files(GUIDE)
+        trigger = page.locator("#analyze-guides")
+        manual = page.locator("#continue-manual")
+        trigger.click()
+        expect(manual).to_be_visible()
+        old_status = page.locator("#analysis-status").text_content()
+        self.assert_upload()
+
+        future = datetime.now(timezone.utc) + timedelta(hours=25)
+        self.session_expires_at = int((future + timedelta(minutes=15)).timestamp() * 1000)
+        page.clock.set_fixed_time(future)
+        trigger.click()
+        expect(manual).to_be_visible()
+        expect(page.locator("#analysis-status")).not_to_have_text(old_status)
+        expect(page.locator("#extraction-review")).to_be_hidden()
+        expect(page.locator("#approve")).to_be_disabled()
+        self.assert_upload()
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        manual.click()
+        page.locator("#approve").click()
+        expect(page.locator("#download")).to_be_enabled()
+
+    def test_reauthentication_does_not_rotate_an_attempt_with_uncertain_delivery(self):
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        self.upload_outcomes[GUIDE["name"]] = ["lost", 401]
+        page.locator("#guides").set_input_files(GUIDE)
+        trigger = page.locator("#analyze-guides")
+        manual = page.locator("#continue-manual")
+        trigger.click()
+        expect(manual).to_be_visible()
+        self.assert_upload()
+
+        with page.expect_response(
+            lambda response: response.url == WORKER + "/extract" and response.status == 401
+        ):
+            trigger.click()
+        expect(manual).to_be_visible()
+        expect(trigger).to_be_enabled()
+        self.assertEqual(len(self.uploads), 2)
+        self.assertEqual(len(self.logins), 1)
+
+        trigger.click()
+        expect(self.review_document(GUIDE["name"])).to_be_visible()
+        self.assertEqual(len(self.logins), 2)
+        self.assertEqual(self.uploaded_names(), [GUIDE["name"]] * 3)
+        request_ids = [headers["x-guide-request"] for headers, _ in self.uploads]
+        self.assertEqual(len(set(request_ids)), 1)
+        self.assertFalse(self.unexpected_requests)

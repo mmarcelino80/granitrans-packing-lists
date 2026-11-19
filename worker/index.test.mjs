@@ -4,6 +4,7 @@ import { createHandler } from './index.mjs';
 
 const app = 'https://packing.example.test';
 const endpoint = 'https://api.example.test/extract';
+const guideRequestId = 'ec79c21d-8a2a-4e1d-8040-e24fed6d3f48';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg==', 'base64');
 const env = {
   APP_ORIGIN: app,
@@ -26,13 +27,14 @@ async function makeBearer() {
   return 'Bearer ' + unsigned + '.' + Buffer.from(signed).toString('base64url');
 }
 
-function extractRequest({ origin = app, authorization, name = 'Guia%20sint%C3%A9tica.png' } = {}) {
+function extractRequest({ origin = app, authorization, name = 'Guia%20sint%C3%A9tica.png', requestId = guideRequestId } = {}) {
   return new Request(endpoint, {
     method: 'POST',
     headers: {
       'Origin': origin,
       'Content-Type': 'image/png',
       'X-Guide-Name': name,
+      ...(requestId !== null ? { 'X-Guide-Request': requestId } : {}),
       ...(authorization ? { Authorization: authorization } : {}),
     },
     body: png,
@@ -68,6 +70,7 @@ test('preflight is origin-scoped and does not make an authenticated request', as
   assert.equal(response.status, 204);
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), app);
   assert.match(response.headers.get('Access-Control-Allow-Headers'), /Authorization/);
+  assert.match(response.headers.get('Access-Control-Allow-Headers'), /X-Guide-Request/);
   assert.equal(response.headers.get('Access-Control-Allow-Credentials'), null);
 });
 
@@ -85,6 +88,17 @@ test('quota is enforced before a Responses API request; successful calls include
     });
   });
   const authorization = await makeBearer();
+  const absentId = await handler(extractRequest({ authorization, requestId: null }), {
+    ...env, USAGE_QUOTA: quota(204),
+  });
+  assert.equal(absentId.status, 400);
+  assert.equal((await absentId.json()).code, 'invalid_request_id');
+
+  const invalidId = await handler(extractRequest({ authorization, requestId: 'incorrect' }), {
+    ...env, USAGE_QUOTA: quota(204),
+  });
+  assert.equal(invalidId.status, 400);
+
   const invalidName = await handler(extractRequest({ authorization, name: '%2Fpath.png' }), {
     ...env, USAGE_QUOTA: quota(204),
   });
@@ -93,6 +107,9 @@ test('quota is enforced before a Responses API request; successful calls include
   const rateLimited = await handler(extractRequest({ authorization }), { ...env, USAGE_QUOTA: quota(429) });
   assert.equal(rateLimited.status, 429);
   assert.ok(Number(rateLimited.headers.get('Retry-After')) > 0);
+  const duplicate = await handler(extractRequest({ authorization }), { ...env, USAGE_QUOTA: quota(409) });
+  assert.equal(duplicate.status, 409);
+  assert.equal((await duplicate.json()).code, 'duplicate_request');
   assert.equal(calls, 0);
 
   const accepted = await handler(extractRequest({ authorization }), { ...env, USAGE_QUOTA: quota(204) });

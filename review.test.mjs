@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  activeReviewRows, excludeReviewDocument, excludeReviewRow, prepareReview, resolveReviewIssue,
+  activeReviewRows, appendReviewDocuments, excludeReviewDocument, excludeReviewRow, prepareReview, resolveReviewIssue,
   reviewIssues, reviewMaterials, reviewTotals,
 } from './review.mjs';
 
@@ -139,4 +139,43 @@ test('withdrawing a whole guide removes its source issues and totals from the ac
   assert.equal(reviewMaterials(review, route).length, 1);
   excludeReviewDocument(review, 'guide-1');
   assert.equal(reviewIssues(review, route)[0].reason, 'missing_rows');
+});
+
+test('appending guides preserves earlier review work, deduplicates IDs and allocates distinct provenance keys', () => {
+  const warnedMaterial = {
+    ...material,
+    issues: [{ field: 'reference', reason: 'illegible', detail: 'Referência parcialmente tapada.' }],
+  };
+  const first = guide({ pages: [{ page: 1, lines: [warnedMaterial, material] }] });
+  const excluded = guide({ id: 'guide-2' });
+  const review = prepareReview({ documents: [first, excluded] }, route);
+  const [originalDocument, excludedDocument] = review.documents;
+  const [editedRow, excludedRow] = review.rows;
+  const { documents, rows, issues, resolved } = review;
+  editedRow.notes = 'Observação confirmada na guia';
+  excludeReviewRow(review, excludedRow.id);
+  excludeReviewDocument(review, excludedDocument.key);
+  const [originalIssue] = reviewIssues(review, route);
+  assert.ok(resolveReviewIssue(review, originalIssue));
+
+  const third = guide({ id: 'document-2', pages: [{ page: 1, lines: [{ ...material, destination: 'Valence' }] }] });
+  const anonymous = { ...guide(), id: null, name: null };
+  const result = appendReviewDocuments(review, [first, third, third, anonymous], route);
+
+  assert.equal(result, review);
+  assert.equal(result.documents, documents);
+  assert.equal(result.rows, rows);
+  assert.equal(result.issues, issues);
+  assert.equal(result.resolved, resolved);
+  assert.equal(result.documents[0], originalDocument);
+  assert.equal(result.rows[0], editedRow);
+  assert.equal(editedRow.notes, 'Observação confirmada na guia');
+  assert.ok(excludedRow.excluded);
+  assert.ok(excludedDocument.excluded);
+  assert.deepEqual(documents.map(({ id }) => id), ['guide-1', 'guide-2', 'document-2', 'document-4']);
+  assert.deepEqual(documents.map(({ key }) => key), ['document-0', 'document-1', 'document-3', 'document-4']);
+  assert.equal(documents[3].name, 'Guia 4');
+  assert.equal(rows[3].destination, 'Valence');
+  assert.equal(new Set(rows.map(({ id }) => id)).size, rows.length);
+  assert.deepEqual(reviewIssues(review, route), []);
 });

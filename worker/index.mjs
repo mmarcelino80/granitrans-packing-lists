@@ -62,28 +62,32 @@ export function createHandler(fetcher = fetch) {
         return new Response(null, { status: 204, headers: {
           ...headers(origin),
           'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Guide-Name',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Guide-Name, X-Guide-Request',
           'Access-Control-Max-Age': '600',
         } });
       }
       if (request.method !== 'POST') return reply({ error: 'Método não permitido.' }, 405, origin);
       const email = await authenticate(request, env);
       if (!env.OPENAI_API_KEY) return reply({ error: 'A extração ainda não está configurada.' }, 503, origin);
+      const requestId = request.headers.get('X-Guide-Request')?.toLowerCase() ?? '';
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(requestId)) {
+        throw new ExtractionError(400, 'invalid_request_id', 'O identificador do pedido de leitura é inválido.');
+      }
       const name = fileName(request);
       const file = await readDocument(request);
-      // Do not retry automatically. Each accepted request reserves budget before calling OpenAI.
-      await reserveQuota(env, email);
       const digest = await crypto.subtle.digest('SHA-256', file.bytes);
       const id = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+      // Reject repeated attempts and reserve quota together before calling OpenAI.
+      await reserveQuota(env, email, { documentId: id, requestId });
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]);
       const document = await extractDocument({ ...file, id, name }, { apiKey: env.OPENAI_API_KEY, fetcher, signal });
       return reply({ documents: [document] }, 200, origin);
     } catch (error) {
       if (error instanceof SecurityError || error instanceof ExtractionError) {
         const extra = error.retryAfter ? { 'Retry-After': String(error.retryAfter) } : {};
-        return reply({ error: error.message }, error.status, origin, extra);
+        return reply({ error: error.message, ...(error.code ? { code: error.code } : {}) }, error.status, origin, extra);
       }
-      return reply({ error: 'Não foi possível analisar a guia.' }, 502, origin);
+      return reply({ error: 'Não foi possível confirmar o resultado da leitura.', code: 'ambiguous_request' }, 502, origin);
     }
   };
 }

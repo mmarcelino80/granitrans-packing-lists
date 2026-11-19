@@ -63,18 +63,27 @@ Pode testar o preflight com este comando, substituindo o hostname do Worker e a 
 curl -i -X OPTIONS 'https://packing-api.example.com/extract' \
   -H 'Origin: https://mmarcelino80.github.io' \
   -H 'Access-Control-Request-Method: POST' \
-  -H 'Access-Control-Request-Headers: authorization,content-type,x-guide-name'
+  -H 'Access-Control-Request-Headers: authorization,content-type,x-guide-name,x-guide-request'
 ```
 
 Se a janela mostrar erro de login ou for bloqueada, permita janelas deste site e verifique o hostname, o AUD e a política de emails. Se a leitura falhar após login, confirme `APP_ORIGIN`, a configuração do Worker e a disponibilidade do projeto OpenAI. Uma indicação de quota significa que há de esperar pelo próximo dia UTC ou continuar a editar manualmente. Evite repetir uma leitura sem necessidade, pois os pedidos admitidos contam para a quota.
 
 Para parar a leitura, publique o Worker com `EXTRACTION_ENABLED="false"` e retire o endereço de `extraction-config.mjs` na próxima atualização do Pages. Para remover um utilizador, atualize a política Access e a lista privada. Alterar `SESSION_SECRET` invalida os tokens já emitidos.
 
+## Recuperar um lote após uma falha
+
+1. Ao regressar do login, confirme a lista de anexos. A aplicação verifica a seleção antes de cada envio. As guias removidas antes do início do pedido ficam fora do lote. Retirar uma guia depois de o pedido começar não recolhe os dados já enviados. Para incluir guias anexadas depois de iniciar a análise, selecione **Analisar guias** novamente.
+2. Se parte do lote falhar, mantenha o separador aberto. As guias concluídas ficam na revisão. Pode corrigir ou excluir linhas durante a espera. Ao selecionar **Analisar guias** para repetir, só seguem as guias por concluir. As novas linhas são acrescentadas à revisão com as correções e confirmações anteriores preservadas.
+3. Se perder a ligação ou receber uma resposta inconclusiva, a aplicação reutiliza o identificador reservado à tentativa durante a janela segura de 24 horas. O Worker recusa uma tentativa já admitida sem gastar mais quota nem repetir o pedido à OpenAI. O Worker não guarda o resultado para o reenviar. Após essa recusa ou após o fim da janela segura, a aplicação deixa de reenviar a guia nessa sessão. Use **Conferir guias manualmente** para resolver as guias por concluir e mantenha as linhas já recebidas.
+4. Após uma rejeição explícita da OpenAI ou uma resposta sem extração utilizável, pode repetir a guia numa nova tentativa. A admissão dessa tentativa pode consumir quota. Se o login expirar antes de o Worker aceitar a repetição, volte a autenticar-se. A aplicação conserva o identificador, porque a expiração da sessão não confirma o resultado de um envio anterior. A aprovação e a importação dos resultados ficam bloqueadas até concluir a análise ou confirmar a conferência manual das guias pendentes.
+
+Os resultados locais e as correções mantêm-se até fechar ou recarregar o separador. Separadores diferentes mantêm sessões e identificadores de tentativa independentes. A proteção do Worker destina-se à repetição da mesma tentativa.
+
 ## Tratamento dos ficheiros
 
 Ao selecionar **Analisar guias**, as guias novas são enviadas para o Worker e para a API OpenAI. As cópias idênticas e as guias já importadas na sessão são ignoradas. A sessão de extração dura até 15 minutos e o navegador mantém o respetivo token em memória. Cada análise aceita até cinco guias. O Worker verifica o tipo de ficheiro, limita cada guia a 10 MiB e cada PDF a 10 páginas, mantém as contagens da quota no Durable Object e envia o pedido à API Responses com `store: false` e um máximo de 12 000 tokens de saída por guia. Os resultados permanecem em revisão até o utilizador confirmar as linhas.
 
-O Worker processa os ficheiros em memória. A compilação remove chamadas de consola, a observabilidade está desativada e o Durable Object guarda apenas as contagens diárias e identificadores de conta derivados por hash. As imagens estão limitadas a 12 000 píxeis por lado e 36 megapíxeis.
+O Worker processa os ficheiros em memória. A compilação remove chamadas de consola e a observabilidade está desativada. O Durable Object guarda as contagens diárias e identificadores derivados por hash de contas e tentativas admitidas. A proteção contra repetições abrange o dia UTC corrente e o anterior, e os registos mais antigos são substituídos quando é admitida uma nova tentativa. Os ficheiros e resultados de análise não são guardados no Worker. As imagens estão limitadas a 12 000 píxeis por lado e 36 megapíxeis.
 
 A opção `store: false` controla o armazenamento do estado da resposta pela API. A retenção aplicável a monitorização de abuso e outros tratamentos segue o contrato e as definições do projeto OpenAI. Confirme as condições da Granitrans antes de usar guias comerciais. [Controlos de dados da API OpenAI](https://platform.openai.com/docs/guides/your-data) · [Envio de PDFs](https://platform.openai.com/docs/guides/pdf-files)
 

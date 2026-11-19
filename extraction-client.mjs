@@ -43,7 +43,7 @@ export function createExtractionClient(workerUrl, page = window) {
     return signingIn;
   }
 
-  async function extract(file, token) {
+  async function extract(file, token, requestId) {
     const extension = file.name.split('.').at(-1).toLowerCase();
     const response = await page.fetch(new URL('/extract', url), {
       method: 'POST',
@@ -51,6 +51,7 @@ export function createExtractionClient(workerUrl, page = window) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': types[extension] ?? 'application/octet-stream',
         'X-Guide-Name': encodeURIComponent(file.name),
+        'X-Guide-Request': requestId,
       },
       body: file,
       credentials: 'omit',
@@ -61,7 +62,14 @@ export function createExtractionClient(workerUrl, page = window) {
     const result = await response.json().catch(() => null);
     if (response.status === 401) session = null;
     if (!response.ok || !Array.isArray(result?.documents) || result.documents.length !== 1) {
-      throw new Error(typeof result?.error === 'string' ? result.error : 'Não foi possível analisar a guia.');
+      const hasApiError = !response.ok && typeof result?.error === 'string';
+      const error = new Error(hasApiError ? result.error : 'Não foi possível confirmar o resultado da guia.');
+      error.alreadyAccepted = hasApiError && response.status === 409 && result.code === 'duplicate_request';
+      // Unknown delivery outcomes must reuse the same attempt, including timeouts and proxy errors.
+      // A rejection before admission (e.g. an expired login) says nothing about an earlier send.
+      error.canStartNewAttempt = hasApiError
+        && ['extraction_rejected', 'extraction_busy', 'invalid_extraction'].includes(result.code);
+      throw error;
     }
     return result.documents[0];
   }

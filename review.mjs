@@ -57,13 +57,18 @@ function sourceTotals(totals, location, prefix) {
 }
 
 export function prepareReview(response, route) {
+  const prepared = collectReview(response.documents ?? [], route, (index) => `document-${index}`);
+  return { ...prepared, resolved: new Map() };
+}
+
+function collectReview(sources, route, makeKey, offset = 0) {
   const rows = [];
   const issues = [];
-  const documents = (response.documents ?? []).map((document, documentIndex) => {
-    const key = `document-${documentIndex}`;
+  const documents = sources.map((document, documentIndex) => {
+    const key = makeKey(documentIndex);
     // The internal key identifies the review instance, even if two sources share an identifier.
     const documentId = text(document.id) || key;
-    const documentName = text(document.name) || `Guia ${documentIndex + 1}`;
+    const documentName = text(document.name) || `Guia ${offset + documentIndex + 1}`;
     const location = { documentId, documentName, documentKey: key, page: null, pageKey: null, rowId: null };
     issues.push(...sourceIssues(document.issues, location, key));
 
@@ -109,7 +114,33 @@ export function prepareReview(response, route) {
     return { id: documentId, key, name: documentName, pages, totals: sourceTotals(document.totals, location, key), excluded: false };
   });
 
-  return { documents, rows, issues, resolved: new Map() };
+  return { documents, rows, issues };
+}
+
+export function appendReviewDocuments(review, documents, route) {
+  const seen = new Set(review.documents.map(({ id }) => id));
+  const sources = documents.filter((document) => {
+    const id = text(document.id);
+    if (seen.has(id)) return false;
+    if (id) seen.add(id);
+    return true;
+  });
+  if (!sources.length) return review;
+
+  const occupied = new Set([...seen, ...review.documents.map(({ key }) => key)]);
+  let nextIndex = review.documents.length;
+  const makeKey = () => {
+    let key;
+    do {
+      key = `document-${nextIndex++}`;
+    } while (occupied.has(key));
+    return key;
+  };
+  const addition = collectReview(sources, route, makeKey, review.documents.length);
+  review.documents.push(...addition.documents);
+  review.rows.push(...addition.rows);
+  review.issues.push(...addition.issues);
+  return review;
 }
 
 export function excludeReviewRow(review, rowId, excluded = true) {
@@ -119,7 +150,8 @@ export function excludeReviewRow(review, rowId, excluded = true) {
 }
 
 export function excludeReviewDocument(review, documentId, excluded = true) {
-  const document = review.documents.find(({ id, key }) => key === documentId || id === documentId);
+  const document = review.documents.find(({ key }) => key === documentId)
+    ?? review.documents.find(({ id }) => id === documentId);
   if (!document) return;
   document.excluded = excluded;
 }

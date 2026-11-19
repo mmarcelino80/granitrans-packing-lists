@@ -238,7 +238,7 @@ test('fails closed on extra keys, type mismatches, missing provenance and invali
 
 test('maps missing setup, busy service, upstream error and timeout to safe messages', async () => {
   await assert.rejects(extractDocument(image), problem('extraction_unavailable', 503));
-  for (const [status, kind, expectedStatus] of [[429, 'extraction_busy', 503], [500, 'extraction_failed', 502]]) {
+  for (const [status, kind, expectedStatus] of [[429, 'extraction_busy', 503], [500, 'extraction_rejected', 502]]) {
     await assert.rejects(
       extractDocument(image, { apiKey: testSecret, fetcher: async () => new Response('private upstream details', { status }) }),
       (error) => problem(kind, expectedStatus)(error) && !error.message.includes('private upstream details'),
@@ -249,6 +249,18 @@ test('maps missing setup, busy service, upstream error and timeout to safe messa
     signal: AbortSignal.abort(),
     fetcher: async (url, options) => options.signal.throwIfAborted(),
   }), problem('extraction_timeout', 504));
+
+  await assert.rejects(extractDocument(image, {
+    apiKey: testSecret,
+    fetcher: async () => { throw new Error('Transport error'); },
+  }), problem('extraction_transport', 502));
+
+  await assert.rejects(extractDocument(image, {
+    apiKey: testSecret,
+    fetcher: async () => new Response(new ReadableStream({
+      pull(controller) { controller.error(new Error('Response body lost')); },
+    })),
+  }), problem('extraction_transport', 502));
 });
 
 test('rejects malformed API JSON and non-JSON content without exposing them', async () => {
