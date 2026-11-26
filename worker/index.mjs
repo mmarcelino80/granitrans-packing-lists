@@ -1,7 +1,10 @@
 import { ExtractionError, UPSTREAM_TIMEOUT_MS, extractDocument, readDocument } from './extraction.mjs';
-import { SecurityError, accessLogin, authenticate, reserveQuota } from './security.mjs';
+import { SecurityError, accessLogin, authenticate, authenticateAccess, reserveQuota } from './security.mjs';
 
 export { QuotaCounter } from './security.mjs';
+
+const EXTRACT_HEADERS = ['Authorization', 'Content-Type', 'X-Guide-Name', 'X-Guide-Request'];
+const PERMITTED_REQUEST_HEADERS = new Set(EXTRACT_HEADERS.map((header) => header.toLowerCase()));
 
 function headers(origin) {
   return {
@@ -9,7 +12,7 @@ function headers(origin) {
     'Content-Type': 'application/json; charset=utf-8',
     'X-Content-Type-Options': 'nosniff',
     'Vary': 'Origin',
-    ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
+    ...(origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true' } : {}),
   };
 }
 
@@ -17,14 +20,44 @@ function reply(value, status, origin, extra = {}) {
   return Response.json(value, { status, headers: { ...headers(origin), ...extra } });
 }
 
-function appOrigin(env) {
+function httpsOrigin(value) {
   try {
-    const url = new URL(env.APP_ORIGIN);
-    if (url.protocol === 'https:' && url.origin === env.APP_ORIGIN) return url.origin;
+    const url = new URL(value);
+    if (url.protocol === 'https:' && url.origin === value) return url.origin;
   } catch {
     // Invalid configuration fails closed.
   }
   return null;
+}
+
+function preflight(request, origin) {
+  if (!origin) return reply({ error: 'Origem não autorizada.' }, 403, null);
+
+  const vary = { Vary: 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers' };
+  if (request.headers.get('Access-Control-Request-Method') !== 'POST') {
+    return reply({ error: 'Método não permitido.' }, 405, origin, { ...vary, Allow: 'POST, OPTIONS' });
+  }
+  const requested = request.headers.get('Access-Control-Request-Headers');
+  if (requested && requested.split(',').some((header) => !PERMITTED_REQUEST_HEADERS.has(header.trim().toLowerCase()))) {
+    return reply({ error: 'Cabeçalhos não autorizados.' }, 403, origin, vary);
+  }
+
+  return new Response(null, { status: 204, headers: {
+    ...headers(origin),
+    ...vary,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': EXTRACT_HEADERS.join(', '),
+    'Access-Control-Max-Age': '600',
+  } });
+}
+
+async function authenticateSession(request, env, dependencies) {
+  const email = await authenticate(request, env);
+  const accessEmail = await authenticateAccess(request, env, dependencies);
+  if (accessEmail !== email) {
+    throw new SecurityError(403, 'A conta do Access não corresponde à sessão da aplicação.', { code: 'session_identity_mismatch' });
+  }
+  return email;
 }
 
 function fileName(request) {
@@ -40,34 +73,40 @@ function fileName(request) {
   return name;
 }
 
-export function createHandler(fetcher = fetch) {
+export function createHandler(fetcher = fetch, { accessFetcher = fetch } = {}) {
+  const accessDependencies = { fetchImpl: accessFetcher };
   return async function handle(request, env) {
-    const { pathname } = new URL(request.url);
-    const configuredOrigin = appOrigin(env);
-    const suppliedOrigin = request.headers.get('Origin');
-    const origin = configuredOrigin && suppliedOrigin === configuredOrigin ? configuredOrigin : null;
-
-    if (env.EXTRACTION_ENABLED !== 'true' || !configuredOrigin) {
-      return reply({ error: 'A extração ainda não está disponível.' }, 503, origin);
+    const url = new URL(request.url);
+    const configuredOrigin = httpsOrigin(env.APP_ORIGIN);
+    const workerOrigin = httpsOrigin(env.WORKER_ORIGIN);
+    if (!configuredOrigin || !workerOrigin) {
+      return reply({ error: 'A extração ainda não está configurada.' }, 503, null);
     }
+    if (url.origin !== workerOrigin) return reply({ error: 'Servidor não autorizado.' }, 403, null);
+
+    const { pathname } = url;
+    const suppliedOrigin = request.headers.get('Origin');
+    const origin = pathname === '/extract' && suppliedOrigin === configuredOrigin ? configuredOrigin : null;
 
     try {
-      if (pathname === '/auth' && request.method === 'GET') return await accessLogin(request, env);
-      if (pathname !== '/extract') return reply({ error: 'Operação desconhecida.' }, 404, origin);
-      if (!origin) return reply({ error: 'Origem não autorizada.' }, 403, null);
-      if (request.method === 'OPTIONS') {
-        if (request.headers.get('Access-Control-Request-Method') !== 'POST') {
-          return reply({ error: 'Método não permitido.' }, 405, origin);
-        }
-        return new Response(null, { status: 204, headers: {
-          ...headers(origin),
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Guide-Name, X-Guide-Request',
-          'Access-Control-Max-Age': '600',
-        } });
+      if (pathname === '/auth') {
+        if (request.method !== 'GET') return reply({ error: 'Método não permitido.' }, 405, null, { Allow: 'GET' });
+        return await accessLogin(request, env, accessDependencies);
       }
-      if (request.method !== 'POST') return reply({ error: 'Método não permitido.' }, 405, origin);
-      const email = await authenticate(request, env);
+      if (pathname === '/session-check') {
+        if (suppliedOrigin !== workerOrigin) return reply({ error: 'Origem não autorizada.' }, 403, null);
+        if (request.method !== 'POST') return reply({ error: 'Método não permitido.' }, 405, null, { Allow: 'POST' });
+        await authenticateSession(request, env, accessDependencies);
+        return reply({ authenticated: true }, 200, null);
+      }
+      if (pathname !== '/extract') return reply({ error: 'Operação desconhecida.' }, 404, origin);
+      if (request.method === 'OPTIONS') return preflight(request, origin);
+      if (!origin && suppliedOrigin !== workerOrigin) return reply({ error: 'Origem não autorizada.' }, 403, null);
+      if (request.method !== 'POST') return reply({ error: 'Método não permitido.' }, 405, origin, { Allow: 'POST, OPTIONS' });
+      const email = await authenticateSession(request, env, accessDependencies);
+      if (env.EXTRACTION_ENABLED !== 'true') {
+        return reply({ error: 'A extração ainda não está disponível.' }, 503, origin);
+      }
       if (!env.OPENAI_API_KEY) return reply({ error: 'A extração ainda não está configurada.' }, 503, origin);
       const requestId = request.headers.get('X-Guide-Request')?.toLowerCase() ?? '';
       if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(requestId)) {

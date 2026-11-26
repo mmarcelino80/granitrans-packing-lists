@@ -1,3 +1,5 @@
+import { startAuthBridge } from './auth-bridge.mjs';
+
 const SESSION_TTL = 15 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 const QUOTA_KEY = 'daily';
@@ -118,7 +120,9 @@ export async function verifyAccessToken(token, env, { fetchImpl = fetch, now = D
 
   let keys;
   try {
-    const response = await fetchImpl(issuer + '/cdn-cgi/access/certs', { redirect: 'error' });
+    const response = await fetchImpl(issuer + '/cdn-cgi/access/certs', {
+      redirect: 'error', signal: AbortSignal.timeout(5_000),
+    });
     if (!response.ok) throw serviceUnavailable();
     ({ keys } = await response.json());
   } catch {
@@ -162,8 +166,8 @@ async function signSession({ email, expiresAt }, env) {
 }
 
 export async function accessLogin(request, env, dependencies = {}) {
-  const nonce = new URL(request.url).searchParams.get('nonce') || '';
-  if (!/^[A-Za-z0-9_-]{32,128}$/u.test(nonce)) {
+  const nonce = new URL(request.url).searchParams.get('nonce');
+  if (nonce !== null && !/^[A-Za-z0-9_-]{32,128}$/u.test(nonce)) {
     throw new SecurityError(400, 'Volte à aplicação e inicie sessão.');
   }
 
@@ -171,22 +175,26 @@ export async function accessLogin(request, env, dependencies = {}) {
   const claims = await verifyAccessToken(request.headers.get('Cf-Access-Jwt-Assertion'), env, { ...dependencies, now });
   const expiresAt = Math.min(claims.expiresAt, now + SESSION_TTL);
   const token = await signSession({ email: claims.email, expiresAt }, env);
-  const event = JSON.stringify({ type: 'granitrans:session', nonce, token, expiresAt });
-  const target = JSON.stringify(appOrigin(env));
+  const config = JSON.stringify({ target: appOrigin(env), nonce, token, expiresAt });
   const scriptNonce = encode(crypto.getRandomValues(new Uint8Array(24)));
 
   return new Response(
-    `<!doctype html><html lang="pt-PT"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Packing List</title><p>Sessão confirmada. Pode voltar à aplicação.</p><script nonce="${scriptNonce}">window.opener?.postMessage(${event}, ${target});</script></html>`,
+    `<!doctype html><html lang="pt-PT"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Packing List</title><p id="status" role="status">A verificar a sessão Cloudflare Access…</p><script nonce="${scriptNonce}">(${startAuthBridge.toString()})(${config});</script></html>`,
     {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${scriptNonce}'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
+        'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${scriptNonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
         'Referrer-Policy': 'no-referrer',
         'X-Content-Type-Options': 'nosniff',
       },
     },
   );
+}
+
+export async function authenticateAccess(request, env, dependencies) {
+  const claims = await verifyAccessToken(request.headers.get('Cf-Access-Jwt-Assertion'), env, dependencies);
+  return claims.email;
 }
 
 export async function authenticate(request, env, now = Date.now()) {

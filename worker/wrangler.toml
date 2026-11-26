@@ -1,14 +1,19 @@
 name = "granitrans-packing-list-extraction"
 main = ".generated/index.mjs"
 compatibility_date = "2026-11-19"
-workers_dev = false
+workers_dev = true
 preview_urls = false
 
 [observability]
 enabled = false
 
+[observability.logs]
+enabled = false
+invocation_logs = false
+
 [vars]
 EXTRACTION_ENABLED = "false"
+WORKER_ORIGIN = "https://granitrans-packing-list-extraction.mmarcelino-pt.workers.dev"
 APP_ORIGIN = ""
 ACCESS_TEAM_DOMAIN = ""
 ACCESS_AUD = ""

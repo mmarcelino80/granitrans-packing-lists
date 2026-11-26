@@ -47,7 +47,8 @@ async function accessToken(overrides = {}, headerOverrides = {}) {
 
 async function keySet(url, options) {
   assert.equal(url, issuer + '/cdn-cgi/access/certs');
-  assert.deepEqual(options, { redirect: 'error' });
+  assert.equal(options.redirect, 'error');
+  assert.ok(options.signal instanceof AbortSignal);
   return Response.json({ keys: [publicKey] });
 }
 
@@ -111,11 +112,10 @@ test('popup issues a short verified session scoped to the exact application orig
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.ok(response.headers.get('Content-Security-Policy').includes("frame-ancestors 'none'"));
-  const [match, payload, origin] = (await response.text()).match(/postMessage\((\{[^\n]+\}), ("[^"]+")\)/u);
+  const [match, payload] = (await response.text()).match(/\}\)\((\{"target":[^\n]+\})\);<\/script>/u);
   assert.ok(match);
-  assert.equal(JSON.parse(origin), env.APP_ORIGIN);
-  const { type, nonce: returnedNonce, token, expiresAt } = JSON.parse(payload);
-  assert.equal(type, 'granitrans:session');
+  const { target, nonce: returnedNonce, token, expiresAt } = JSON.parse(payload);
+  assert.equal(target, env.APP_ORIGIN);
   assert.equal(returnedNonce, nonce);
   assert.equal(expiresAt, now + 15 * 60 * 1000);
 
@@ -131,6 +131,14 @@ test('popup issues a short verified session scoped to the exact application orig
 test('rejects popup without a valid nonce and /extract with no bearer', async () => {
   await assert.rejects(accessLogin(new Request(domain + '/auth?nonce=oops'), env, authDependencies), { status: 400 });
   await assert.rejects(authenticate(new Request(domain + '/extract'), env, now), { status: 401 });
+});
+
+test('standalone /auth prepares a verification without an opener nonce', async () => {
+  const headers = { 'Cf-Access-Jwt-Assertion': await accessToken() };
+  const page = await accessLogin(new Request(domain + '/auth', { headers }), env, authDependencies);
+  assert.match(await page.text(), /"nonce":null/);
+  assert.match(page.headers.get('Content-Security-Policy'), /connect-src 'self'/);
+  await assert.rejects(accessLogin(new Request(domain + '/auth'), env, authDependencies), { status: 401 });
 });
 
 function quotaBinding(options, initial = []) {

@@ -16,8 +16,10 @@ from playwright.sync_api import expect, sync_playwright
 from test_demo_session import PROJECT_PATH, ROOT, StaticHandler
 
 
-WORKER = "https://packing-api.example"
+WORKER = "https://packing-api.granitrans-tests.workers.dev"
 SESSION = "session-sintetica-de-teste"
+ACCESS_COOKIE = "CF_Authorization=acesso-sintetico"
+STANDALONE_OK = "Identidade e sessão verificadas. Nenhuma guia foi enviada."
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL7kAAAAASUVORK5CYII="
 )
@@ -85,6 +87,9 @@ class ExtractionTests(unittest.TestCase):
         cls.addClassCleanup(cls.server.shutdown)
         cls.origin = f"http://127.0.0.1:{cls.server.server_port}"
         cls.url = cls.origin + PROJECT_PATH
+        cls.bridge_script = (ROOT / "worker/auth-bridge.mjs").read_text(encoding="utf-8").replace(
+            "export async function startAuthBridge", "async function startAuthBridge", 1
+        )
 
         playwright = sync_playwright().start()
         cls.addClassCleanup(playwright.stop)
@@ -95,9 +100,12 @@ class ExtractionTests(unittest.TestCase):
         self.context = self.browser.new_context(locale="pt-PT", timezone_id="Europe/Lisbon")
         self.addCleanup(self.context.close)
         self.logins = []
+        self.session_checks = []
+        self.bridge_requests = []
         self.uploads = []
         self.unexpected_requests = []
         self.error_status = None
+        self.session_check_status = 200
         self.delay_login = False
         self.session_expires_at = None
         self.upload_outcomes = {}
@@ -106,6 +114,14 @@ class ExtractionTests(unittest.TestCase):
         self.context.route("**/*", self.intercept)
         self.configured = True
         self.page = self.context.new_page()
+        self.page.add_init_script("""
+            window.sessionMessages = [];
+            window.addEventListener('message', ({ data }) => {
+                if (data?.type === 'granitrans:session') {
+                    window.sessionMessages.push(Object.keys(data).sort());
+                }
+            });
+        """)
 
     def intercept(self, route):
         request = route.request
@@ -118,52 +134,67 @@ class ExtractionTests(unittest.TestCase):
         if request.url.startswith(self.origin + "/"):
             route.continue_()
             return
-        if request.url.startswith(WORKER + "/auth?"):
-            nonce = parse_qs(urlsplit(request.url).query)["nonce"][0]
+        parsed = urlsplit(request.url)
+        if request.method == "GET" and request.url.split("?", 1)[0] == WORKER + "/auth":
+            nonce = parse_qs(parsed.query).get("nonce", [None])[0]
             self.logins.append(nonce)
-            payload = {
-                "type": "granitrans:session",
+            config = {
+                "target": self.origin,
                 "nonce": nonce,
                 "token": SESSION,
                 "expiresAt": self.session_expires_at or int(time() * 1000) + 15 * 60 * 1000,
             }
-            login = f"window.opener.postMessage({json.dumps(payload)}, {json.dumps(self.origin)})"
             invoke = "" if self.delay_login else "completeLogin();"
             route.fulfill(
-                content_type="text/html",
-                body=f"<script>function completeLogin() {{ {login}; }} {invoke}</script>",
+                content_type="text/html; charset=utf-8",
+                headers={
+                    "Set-Cookie": ACCESS_COOKIE + "; Path=/; Secure; HttpOnly; SameSite=Lax",
+                    "Referrer-Policy": "no-referrer",
+                    "Content-Security-Policy": "default-src 'none'; connect-src 'self'; script-src 'nonce-test'",
+                },
+                body=(
+                    f"<p id='status'>A confirmar sessão</p><script nonce='test'>{self.bridge_script}\n"
+                    f"function completeLogin() {{ return startAuthBridge({json.dumps(config)}); }} "
+                    f"{invoke}</script>"
+                ),
             )
             return
-        if request.url == WORKER + "/extract":
-            cors = {"Access-Control-Allow-Origin": self.origin}
-            if request.method == "OPTIONS":
+        if request.method == "POST" and request.url in {WORKER + "/session-check", WORKER + "/extract"}:
+            headers = request.all_headers()
+            self.bridge_requests.append((parsed.path, request.frame.url, headers))
+            if parsed.path == "/session-check":
+                self.session_checks.append(headers)
                 route.fulfill(
-                    status=204,
-                    headers={
-                        **cors,
-                        "Access-Control-Allow-Methods": "POST, OPTIONS",
-                        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Guide-Name, X-Guide-Request",
-                    },
+                    status=self.session_check_status,
+                    json={"authenticated": self.session_check_status == 200},
                 )
                 return
-            if request.method == "POST":
-                raw = request.post_data_buffer
-                self.uploads.append((request.all_headers(), raw))
-                name = unquote(request.header_value("X-Guide-Name"))
-                outcomes = self.upload_outcomes.get(name, [])
-                outcome = outcomes.pop(0) if outcomes else self.error_status
-                if outcome == "hold":
-                    self.pending_uploads[name] = (route, raw)
-                elif outcome == "lost":
-                    route.abort("failed")
-                else:
-                    self.respond_to_upload(route, name, raw, outcome)
-                return
+            raw = request.post_data_buffer
+            self.uploads.append((headers, raw))
+            name = unquote(headers["x-guide-name"])
+            outcomes = self.upload_outcomes.get(name, [])
+            outcome = outcomes.pop(0) if outcomes else self.error_status
+            if outcome == "hold":
+                self.pending_uploads[name] = (route, raw)
+            elif outcome == "lost":
+                route.abort("failed")
+            else:
+                self.respond_to_upload(route, name, raw, outcome)
+            return
         self.unexpected_requests.append((request.method, request.url))
         route.abort()
 
+    def tearDown(self):
+        self.assertFalse(self.unexpected_requests)
+        for endpoint, source_url, headers in self.bridge_requests:
+            self.assertTrue(source_url == WORKER + "/auth" or source_url.startswith(WORKER + "/auth?"))
+            self.assertEqual(headers["origin"], WORKER)
+            self.assertEqual(headers["authorization"], "Bearer " + SESSION)
+            self.assertIn(ACCESS_COOKIE, headers["cookie"])
+            if endpoint == "/extract":
+                self.assertIn("nonce=", source_url)
+
     def respond_to_upload(self, route, name, raw, error_status=None):
-        cors = {"Access-Control-Allow-Origin": self.origin}
         if error_status:
             message = QUOTA_ERROR if error_status == 429 else "A análise da guia falhou. Tente novamente."
             payload = {"error": message}
@@ -171,11 +202,11 @@ class ExtractionTests(unittest.TestCase):
                 payload["code"] = "extraction_rejected"
             if error_status == 409:
                 payload["code"] = "duplicate_request"
-            route.fulfill(status=error_status, headers=cors, json=payload)
+            route.fulfill(status=error_status, json=payload)
             return
         identifier = hashlib.sha256(raw).hexdigest()
         document = self.document_factory(identifier, name)
-        route.fulfill(headers=cors, json={"documents": [document]})
+        route.fulfill(json={"documents": [document]})
 
     def remove_guide(self, name):
         self.page.get_by_role("button", name=f"Remover {name}", exact=True).click()
@@ -206,11 +237,9 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(len(self.uploads), 1)
         headers, data = self.uploads[0]
         self.assertEqual(data, PNG)
-        self.assertEqual(headers["origin"], self.origin)
-        self.assertEqual(headers["authorization"], "Bearer " + SESSION)
+        self.assertTrue(self.session_checks)
         self.assertEqual(headers["content-type"], "image/png")
         self.assertEqual(unquote(headers["x-guide-name"]), GUIDE["name"])
-        self.assertNotIn("cookie", headers)
         self.assertFalse(self.unexpected_requests)
 
     def test_extraction_waits_for_review_and_imports_only_accepted_materials(self):
@@ -233,6 +262,10 @@ class ExtractionTests(unittest.TestCase):
         expect(page.locator("#review-totals")).to_contain_text("pág. 1")
         expect(page.locator("#apply-review")).to_be_disabled()
         self.assertEqual(len(self.logins), 1)
+        self.assertEqual(len(self.session_checks), 1)
+        self.assertEqual(
+            page.evaluate("window.sessionMessages"), [["expiresAt", "nonce", "type"]]
+        )
         self.assert_upload()
 
         first, second = page.locator("#review-rows details").all()
@@ -332,8 +365,9 @@ class ExtractionTests(unittest.TestCase):
         first, removed, last = (numbered_guide(number) for number in (1, 2, 3))
         self.upload_outcomes[first["name"]] = ["hold"]
         page.locator("#guides").set_input_files([first, removed, last])
-        with page.expect_request(
-            lambda request: request.url == WORKER + "/extract" and request.method == "POST"
+        with self.context.expect_event(
+            "request",
+            lambda request: request.url == WORKER + "/extract" and request.method == "POST",
         ):
             page.locator("#analyze-guides").click()
         self.remove_guide(removed["name"])
@@ -421,8 +455,8 @@ class ExtractionTests(unittest.TestCase):
         expect(manual).to_be_visible()
         expect(self.review_document(accepted["name"])).to_be_visible()
         expect(apply).to_be_disabled()
-        with page.expect_response(
-            lambda response: response.url == WORKER + "/extract" and response.status == 409
+        with self.context.expect_event(
+            "response", lambda response: response.url == WORKER + "/extract" and response.status == 409
         ):
             trigger.click()
         expect(manual).to_be_visible()
@@ -488,8 +522,8 @@ class ExtractionTests(unittest.TestCase):
         expect(manual).to_be_visible()
         self.assert_upload()
 
-        with page.expect_response(
-            lambda response: response.url == WORKER + "/extract" and response.status == 401
+        with self.context.expect_event(
+            "response", lambda response: response.url == WORKER + "/extract" and response.status == 401
         ):
             trigger.click()
         expect(manual).to_be_visible()
@@ -504,3 +538,30 @@ class ExtractionTests(unittest.TestCase):
         request_ids = [headers["x-guide-request"] for headers, _ in self.uploads]
         self.assertEqual(len(set(request_ids)), 1)
         self.assertFalse(self.unexpected_requests)
+
+    def test_standalone_authentication_checks_session_without_extracting(self):
+        page = self.page
+        page.goto(WORKER + "/auth")
+        expect(page.locator("#status")).to_have_text(STANDALONE_OK)
+        self.assertEqual(self.logins, [None])
+        self.assertEqual(len(self.session_checks), 1)
+        self.assertFalse(self.uploads)
+        cookie = next(cookie for cookie in self.context.cookies(WORKER) if cookie["name"] == "CF_Authorization")
+        self.assertTrue(cookie["httpOnly"] and cookie["secure"])
+        self.assertEqual(cookie["sameSite"], "Lax")
+        self.assertEqual(page.evaluate("document.cookie"), "")
+
+    def test_rejected_session_check_never_uploads_a_guide(self):
+        self.session_check_status = 401
+        page = self.page
+        page.goto(self.url)
+        self.prepare_manual_material()
+        page.locator("#guides").set_input_files(GUIDE)
+        page.locator("#analyze-guides").click()
+        expect(page.locator("#continue-manual")).to_be_visible()
+        expect(page.locator("#extraction-review")).to_be_hidden()
+        expect(page.locator("#approve")).to_be_disabled()
+        self.assertEqual(len(self.logins), 1)
+        self.assertEqual(len(self.session_checks), 1)
+        self.assertFalse(self.uploads)
+        self.assertEqual(page.evaluate("window.sessionMessages"), [])
