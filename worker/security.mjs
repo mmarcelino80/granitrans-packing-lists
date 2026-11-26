@@ -4,6 +4,8 @@ const SESSION_TTL = 15 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 const QUOTA_KEY = 'daily';
 const QUOTA_OBJECT = 'packing-list-v02';
+const MAX_USER_DAILY = 25;
+const MAX_GLOBAL_DAILY = 50;
 const EMAIL_PATTERN = /^[^@\s,]+@[^@\s,]+\.[^@\s,]+$/u;
 const BASE64URL = /^[A-Za-z0-9_-]+$/u;
 const ENCODER = new TextEncoder();
@@ -217,8 +219,8 @@ export async function authenticate(request, env, now = Date.now()) {
   return email;
 }
 
-function dailyLimit(value, fallback, max) {
-  if (value === undefined) return fallback;
+function dailyLimit(value, max) {
+  if (value === undefined) return max;
   const number = Number(value);
   if (!/^\d+$/u.test(String(value)) || !Number.isSafeInteger(number) || number < 1 || number > max) {
     throw serviceUnavailable();
@@ -227,15 +229,15 @@ function dailyLimit(value, fallback, max) {
 }
 
 function getLimits(env) {
-  const perUser = dailyLimit(env.QUOTA_PER_USER_DAILY, 10, 50);
-  const global = dailyLimit(env.QUOTA_GLOBAL_DAILY, 20, 100);
+  const perUser = dailyLimit(env.QUOTA_PER_USER_DAILY, MAX_USER_DAILY);
+  const global = dailyLimit(env.QUOTA_GLOBAL_DAILY, MAX_GLOBAL_DAILY);
   if (perUser > global) throw serviceUnavailable();
   return { perUser, global };
 }
 
 export async function reserveQuota(env, email, { documentId, requestId }) {
   ensureAllowed(email, env);
-  getLimits(env);
+  const { perUser, global } = getLimits(env);
   const binding = env.USAGE_QUOTA;
 
   let result;
@@ -260,7 +262,7 @@ export async function reserveQuota(env, email, { documentId, requestId }) {
   }
   if (result.status === 429) {
     const retryAfter = Math.ceil((DAY - (Date.now() % DAY)) / 1000);
-    throw new SecurityError(429, 'O limite diário de leituras foi atingido. Tente novamente amanhã.', { retryAfter });
+    throw new SecurityError(429, `O limite diário de leituras foi atingido (${perUser} por utilizador, ${global} no total). Tente novamente depois da meia-noite UTC.`, { retryAfter });
   }
   throw serviceUnavailable();
 }

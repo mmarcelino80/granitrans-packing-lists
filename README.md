@@ -32,7 +32,7 @@ O botão **Carregar dados fictícios** está disponível numa expedição vazia.
 
 Para configurar contas, credenciais, custos e primeiros testes, consulte o [manual de ativação da leitura de guias](docs/ativar-extracao.md).
 
-A leitura usa raciocínio `medium` e preserva a resolução das fotografias com `detail: "original"`. A espessura vem apenas da descrição do artigo. A coluna «Esp» é ignorada. Uma guia ilustrativa com 8 000 tokens de entrada e 3 000 de saída, incluindo raciocínio, custa cerca de USD 0,0023 à tarifa padrão. A organização Granitrans dispõe de créditos associados à subscrição ChatGPT. O funcionamento da aplicação é independente desses créditos.
+A leitura usa raciocínio `medium` e preserva a resolução das fotografias com `detail: "original"`. A espessura vem apenas da descrição do artigo. A coluna «Esp» é ignorada. Até dois utilizadores podem analisar 25 guias cada por dia UTC, com um máximo global de 50. Uma guia ilustrativa com 8 000 tokens de entrada e 3 000 de saída, incluindo raciocínio, custa cerca de USD 0,0023 à tarifa padrão. A 1 500 guias em 30 dias, o custo indicativo é de USD 3,45, antes de créditos ou impostos. A organização Granitrans dispõe de créditos associados à subscrição ChatGPT. O funcionamento da aplicação é independente desses créditos.
 
 Com Node.js 20 ou posterior, instale as dependências do Worker e execute os testes locais. Os fornecedores externos são simulados.
 
