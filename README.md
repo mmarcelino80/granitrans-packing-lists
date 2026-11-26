@@ -28,9 +28,11 @@ O botão **Carregar dados fictícios** está disponível numa expedição vazia.
 - `app.mjs` gere a sessão, a revisão, a exportação e a partilha.
 - `packing-list.mjs` contém as regras de rota, validação, agregação e geração de texto.
 - `guides.mjs` verifica os ficheiros selecionados e devolve objetos `File` para a sessão da interface.
-- `worker/` contém o serviço separado para autenticar, limitar e analisar guias. A configuração inicial em `extraction-config.mjs` deixa a leitura desativada. A edição manual continua disponível.
+- `worker/` contém o serviço separado para autenticar, limitar e analisar guias com `gpt-6-luna` na Responses API. A configuração inicial em `extraction-config.mjs` deixa a leitura desativada. A edição manual continua disponível.
 
 Para configurar contas, credenciais, custos e primeiros testes, consulte o [manual de ativação da leitura de guias](docs/ativar-extracao.md).
+
+A leitura usa raciocínio `medium` e preserva a resolução das fotografias com `detail: "original"`. A espessura vem apenas da descrição do artigo. A coluna «Esp» é ignorada. Uma guia ilustrativa com 8 000 tokens de entrada e 3 000 de saída, incluindo raciocínio, custa cerca de USD 0,0023 à tarifa padrão. A organização Granitrans dispõe de créditos associados à subscrição ChatGPT. O funcionamento da aplicação é independente desses créditos.
 
 Com Node.js 20 ou posterior, instale as dependências do Worker e execute os testes locais. Os fornecedores externos são simulados.
 
@@ -40,6 +42,8 @@ node --test
 ```
 
 Os testes de navegador usam Python e Playwright com Chromium. Com essas dependências instaladas, execute `python3 -B -m unittest discover -s tests -v`. Os testes servem a aplicação no caminho `/granitrans-packing-lists/`.
+
+As [guias sintéticas e os resultados esperados](tests/fixtures/gpt-6-luna/) servem de referência para a futura validação real. Os testes locais usam respostas simuladas.
 
 Os ícones são do Bootstrap Icons 1.13.1, com a licença em `assets/bootstrap-icons.LICENSE`.
 

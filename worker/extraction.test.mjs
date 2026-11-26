@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { PDFDocument } from 'pdf-lib';
 import {
@@ -58,10 +59,14 @@ function send(body, type = 'image/png', headers = {}) {
 
 function completes(content) {
   return {
+    model: 'gpt-6-luna',
     status: 'completed',
     error: null,
     incomplete_details: null,
-    output: [{ type: 'message', role: 'assistant', status: 'completed', content }],
+    output: [
+      { type: 'reasoning', id: 'rs_test', summary: [] },
+      { type: 'message', role: 'assistant', status: 'completed', content },
+    ],
   };
 }
 
@@ -153,12 +158,17 @@ test('uses one strict Responses API request and returns server-owned provenance'
       assert(options.signal instanceof AbortSignal);
       const request = JSON.parse(options.body);
       assert.equal(request.model, EXTRACTION_MODEL);
+      assert.equal(request.model, 'gpt-6-luna');
       assert.equal(request.store, false);
+      assert.deepEqual(request.reasoning, { effort: 'medium' });
       assert.equal(request.max_output_tokens, MAX_OUTPUT_TOKENS);
+      assert.equal(request.max_output_tokens, 12_000);
       assert.equal(request.tools, undefined);
       assert.match(request.instructions, /untrusted source data/i);
+      assert.match(request.instructions, /Read thickness only from the article description.*Ignore the "Esp" column/);
       assert(!options.body.includes(image.name));
       assert.equal(request.input[0].content[1].type, 'input_image');
+      assert.equal(request.input[0].content[1].detail, 'original');
       assert.equal(request.input[0].content[1].image_url, `data:image/png;base64,${Buffer.from(png).toString('base64')}`);
       const { format } = request.text;
       assert.equal(format.type, 'json_schema');
@@ -215,6 +225,55 @@ test('never returns refused or incomplete model results', async () => {
       extractDocument(image, { apiKey: testSecret, fetcher: async () => Response.json(body) }),
       (error) => problem(code, status)(error) && !error.message.includes('provider-only text'),
     );
+  }
+});
+
+test('rejects the output token limit even when the partial JSON is valid', async () => {
+  const partial = {
+    ...completes([{ type: 'output_text', text: JSON.stringify(documentResult()) }]),
+    status: 'incomplete',
+    incomplete_details: { reason: 'max_output_tokens' },
+    usage: { output_tokens: 12_000, output_tokens_details: { reasoning_tokens: 11_000 } },
+  };
+  await assert.rejects(extractDocument(image, { apiKey: testSecret, fetcher: async () => Response.json(partial) }),
+    problem('extraction_token_limit', 502));
+});
+
+test('reasoning without one complete structured message is not an extraction', async () => {
+  const complete = completes([{ type: 'output_text', text: JSON.stringify(documentResult()) }]);
+  for (const output of [complete.output.slice(0, 1), [...complete.output, { type: 'function_call' }]]) {
+    await assert.rejects(extractDocument(image, {
+      apiKey: testSecret,
+      fetcher: async () => Response.json({ ...complete, output }),
+    }), problem('invalid_extraction', 502));
+  }
+});
+
+test('validates the synthetic JPG, PNG and two-page PDF against their expected extractions', async () => {
+  const fixtures = new URL('../tests/fixtures/gpt-6-luna/', import.meta.url);
+  const dataset = JSON.parse(await readFile(new URL('expected.json', fixtures), 'utf8'));
+  for (const { file, mediaType, expected } of dataset.cases) {
+    const bytes = await readFile(new URL(file, fixtures));
+    const input = await readDocument(send(bytes, mediaType));
+    const document = await extractDocument({ ...input, id: 'synthetic-test', name: file }, {
+      apiKey: testSecret,
+      fetcher: async (url, options) => {
+        assert.equal(url, 'https://api.openai.com/v1/responses');
+        const { model, input } = JSON.parse(options.body);
+        assert.equal(model, 'gpt-6-luna');
+        const payload = input[0].content[1];
+        if (mediaType === 'application/pdf') {
+          assert.equal(payload.type, 'input_file');
+          assert.match(input[0].content[0].text, /2 página/);
+        } else {
+          assert.equal(payload.type, 'input_image');
+          assert.equal(payload.detail, 'original');
+          assert.ok(payload.image_url.startsWith(`data:${mediaType};base64,`));
+        }
+        return respond(expected);
+      },
+    });
+    assert.deepEqual(document, { id: 'synthetic-test', name: file, ...expected });
   }
 });
 

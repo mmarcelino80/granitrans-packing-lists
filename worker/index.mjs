@@ -1,4 +1,4 @@
-import { ExtractionError, extractDocument, readDocument } from './extraction.mjs';
+import { ExtractionError, UPSTREAM_TIMEOUT_MS, extractDocument, readDocument } from './extraction.mjs';
 import { SecurityError, accessLogin, authenticate, reserveQuota } from './security.mjs';
 
 export { QuotaCounter } from './security.mjs';
@@ -79,7 +79,7 @@ export function createHandler(fetcher = fetch) {
       const id = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
       // Reject repeated attempts and reserve quota together before calling OpenAI.
       await reserveQuota(env, email, { documentId: id, requestId });
-      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]);
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]);
       const document = await extractDocument({ ...file, id, name }, { apiKey: env.OPENAI_API_KEY, fetcher, signal });
       return reply({ documents: [document] }, 200, origin);
     } catch (error) {
