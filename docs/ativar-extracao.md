@@ -52,9 +52,13 @@ npm.cmd ci --prefix worker
 if ($LASTEXITCODE -ne 0) { throw 'A instalação das dependências do Worker falhou.' }
 npm.cmd --prefix worker test
 if ($LASTEXITCODE -ne 0) { throw 'Os testes do Worker falharam.' }
+npm.cmd --prefix worker run test:runtime
+if ($LASTEXITCODE -ne 0) { throw 'O teste Workerd falhou.' }
 npm.cmd --prefix worker run build
 if ($LASTEXITCODE -ne 0) { throw 'A compilação do Worker falhou.' }
 ```
+
+O teste Workerd usa um serviço de respostas fictícias no próprio processo. Reproduz a incompatibilidade da opção de redirecionamento anterior, verifica a sessão com extração desativada e confirma que o Worker recusa redirecionamentos do JWKS e da OpenAI. Corre localmente, sem segredos de produção, contas Cloudflare ou pedidos externos. No Windows, use a versão x64 dos pré-requisitos. [Plataformas Workerd](https://github.com/cloudflare/workerd#running-workerd)
 
 ## 4. Instalar o Worker após aprovação da publicação
 
@@ -87,9 +91,19 @@ Para esta instalação, bastam os dois segredos acima. A chave OpenAI só será 
 
 ## 5. Verificar a sessão sem enviar guias
 
-1. **Localmente.** Execute os testes do Worker da secção 3, `node.exe --test` e os testes Playwright indicados no README. Os testes locais simulam os fornecedores e usam dados fictícios.
+1. **Localmente.** Execute os testes Node e Workerd da secção 3, `node.exe --test` e os testes Playwright indicados no README. Os testes locais simulam os fornecedores e usam dados fictícios.
 2. **Acesso permitido.** Com `EXTRACTION_ENABLED = "false"`, abra [a página de verificação do Worker](https://granitrans-packing-list-extraction.mmarcelino-pt.workers.dev/auth) numa janela privada. Use um email autorizado e introduza o PIN recebido. O Worker responde ao `POST /session-check` da janela com HTTP 200 e `{"authenticated":true}`. Confirme a mensagem «Identidade e sessão verificadas. Nenhuma guia foi enviada.». Esta verificação dispensa a OpenAI e a quota de guias.
 3. **Acesso recusado.** Feche todas as janelas privadas, volte a abrir uma e teste um endereço fora da lista a que tenha acesso. A Cloudflare pode mostrar «A code has been emailed to you» mesmo quando não envia PIN. Confirme que o endereço não recebe PIN e não chega à página de verificação. Em **Zero Trust → Insights → Logs → Access authentication logs**, confirme a aplicação, o email e a política para a autenticação bem-sucedida. O Access regista a tentativa com One-time PIN depois da submissão de um código, pelo que um endereço bloqueado sem PIN pode não aparecer nessa lista. [Comportamento do One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/#log-in-with-otp) · [Registos de autenticação Access](https://developers.cloudflare.com/cloudflare-one/insights/logs/dashboard-logs/access-authentication-logs/)
+
+Se `/auth` devolver 503, anote apenas o campo fixo `code` da resposta. Use-o para identificar a etapa antes de alterar a configuração.
+
+| Código | Etapa a verificar |
+| --- | --- |
+| `app_origin_invalid`, `worker_origin_invalid`, `access_config_invalid` | Origens HTTPS, domínio do Access e AUD na configuração local. |
+| `access_jwks_transport`, `access_jwks_http`, `access_jwks_redirect`, `access_jwks_invalid` | Consulta do JWKS pelo Worker, estado HTTP, redirecionamento ou formato JSON. |
+| `access_rsa_import_failed`, `access_rsa_verify_failed` | Importação ou verificação RSA. |
+| `access_allowlist_invalid` | Formato de `ALLOWED_EMAILS` na versão ativa. |
+| `session_secret_invalid`, `session_crypto_failed` | Disponibilidade do segredo ou operação criptográfica da sessão. |
 
 ### Verificação CORS opcional
 

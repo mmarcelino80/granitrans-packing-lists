@@ -93,7 +93,14 @@ test('disabled runtime and cross-origin or unauthenticated calls cannot start an
   const wrongHost = await handler(extractRequest({ url: 'https://other.example.test/extract', authorization, access }), env);
   assert.equal(wrongHost.status, 403);
   assert.equal(wrongHost.headers.get('Access-Control-Allow-Origin'), null);
-  assert.equal((await handler(extractRequest(), { ...env, WORKER_ORIGIN: worker + '/' })).status, 503);
+  for (const [name, value, code] of [
+    ['WORKER_ORIGIN', worker + '/', 'worker_origin_invalid'],
+    ['APP_ORIGIN', app + '/', 'app_origin_invalid'],
+  ]) {
+    const response = await handler(new Request(worker + '/auth'), { ...env, [name]: value });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'A extração ainda não está configurada.', code });
+  }
   assert.equal(calls, 0);
 });
 

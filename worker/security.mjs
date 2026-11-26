@@ -25,8 +25,8 @@ function unauthorized() {
   return new SecurityError(401, 'Inicie sessão para ler as guias.');
 }
 
-function serviceUnavailable() {
-  return new SecurityError(503, 'O serviço de leitura está temporariamente indisponível.');
+function serviceUnavailable(code) {
+  return new SecurityError(503, 'O serviço de leitura está temporariamente indisponível.', { code });
 }
 
 function normalizeEmail(value) {
@@ -34,10 +34,10 @@ function normalizeEmail(value) {
 }
 
 function allowedEmails(env) {
-  const emails = env.ALLOWED_EMAILS?.split(',').map(normalizeEmail);
+  const emails = typeof env.ALLOWED_EMAILS === 'string' ? env.ALLOWED_EMAILS.split(',').map(normalizeEmail) : null;
   if (!emails || emails.length < 1 || emails.length > 2 ||
       new Set(emails).size !== emails.length || emails.some(email => !EMAIL_PATTERN.test(email))) {
-    throw serviceUnavailable();
+    throw serviceUnavailable('access_allowlist_invalid');
   }
   return emails;
 }
@@ -52,7 +52,7 @@ function accessIssuer(value) {
   const origin = typeof value === 'string' ? value.replace(/\/$/u, '') : '';
   const host = origin.replace(/^https:\/\//u, '');
   if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/u.test(host)) {
-    throw serviceUnavailable();
+    throw serviceUnavailable('access_config_invalid');
   }
   return 'https://' + host;
 }
@@ -62,10 +62,10 @@ function appOrigin(env) {
   try {
     parsed = new URL(env.APP_ORIGIN);
   } catch {
-    throw serviceUnavailable();
+    throw serviceUnavailable('app_origin_invalid');
   }
   if (parsed.protocol !== 'https:' || env.APP_ORIGIN !== parsed.origin) {
-    throw serviceUnavailable();
+    throw serviceUnavailable('app_origin_invalid');
   }
   return parsed.origin;
 }
@@ -105,7 +105,7 @@ function parseJson(part) {
 export async function verifyAccessToken(token, env, { fetchImpl = fetch, now = Date.now() } = {}) {
   const issuer = accessIssuer(env.ACCESS_TEAM_DOMAIN);
   const audience = env.ACCESS_AUD;
-  if (typeof audience !== 'string' || !audience.trim()) throw serviceUnavailable();
+  if (typeof audience !== 'string' || !audience.trim()) throw serviceUnavailable('access_config_invalid');
 
   const [headerPart, claimPart, signature] = tokenParts(token);
   const header = parseJson(headerPart);
@@ -120,17 +120,27 @@ export async function verifyAccessToken(token, env, { fetchImpl = fetch, now = D
     throw unauthorized();
   }
 
+  let response;
+  try {
+    response = await fetchImpl(issuer + '/cdn-cgi/access/certs', {
+      redirect: 'manual', signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    throw serviceUnavailable('access_jwks_transport');
+  }
+  const redirected = response.status >= 300 && response.status < 400;
+  if (redirected || !response.ok) {
+    response.body?.cancel().catch(() => {});
+    throw serviceUnavailable(redirected ? 'access_jwks_redirect' : 'access_jwks_http');
+  }
+
   let keys;
   try {
-    const response = await fetchImpl(issuer + '/cdn-cgi/access/certs', {
-      redirect: 'error', signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) throw serviceUnavailable();
     ({ keys } = await response.json());
   } catch {
-    throw serviceUnavailable();
+    throw serviceUnavailable('access_jwks_invalid');
   }
-  if (!Array.isArray(keys)) throw serviceUnavailable();
+  if (!Array.isArray(keys)) throw serviceUnavailable('access_jwks_invalid');
 
   const jwk = keys.find(key => key?.kid === header.kid && key.kty === 'RSA' && (!key.alg || key.alg === 'RS256'));
   if (!jwk) throw unauthorized();
@@ -141,11 +151,17 @@ export async function verifyAccessToken(token, env, { fetchImpl = fetch, now = D
       'jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'],
     );
   } catch {
-    throw serviceUnavailable();
+    throw serviceUnavailable('access_rsa_import_failed');
   }
-  const valid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5', key, decode(signature), ENCODER.encode(headerPart + '.' + claimPart),
-  );
+  const signatureBytes = decode(signature);
+  let valid;
+  try {
+    valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5', key, signatureBytes, ENCODER.encode(headerPart + '.' + claimPart),
+    );
+  } catch {
+    throw serviceUnavailable('access_rsa_verify_failed');
+  }
   if (!valid) throw unauthorized();
 
   const email = normalizeEmail(claims.email);
@@ -154,16 +170,28 @@ export async function verifyAccessToken(token, env, { fetchImpl = fetch, now = D
 }
 
 async function sessionKey(env) {
-  if (typeof env.SESSION_SECRET !== 'string' || env.SESSION_SECRET.length < 32) throw serviceUnavailable();
-  return crypto.subtle.importKey(
-    'raw', ENCODER.encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'],
-  );
+  if (typeof env.SESSION_SECRET !== 'string' || env.SESSION_SECRET.length < 32) {
+    throw serviceUnavailable('session_secret_invalid');
+  }
+  try {
+    return await crypto.subtle.importKey(
+      'raw', ENCODER.encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'],
+    );
+  } catch {
+    throw serviceUnavailable('session_crypto_failed');
+  }
 }
 
 async function signSession({ email, expiresAt }, env) {
   const payload = encode(ENCODER.encode(JSON.stringify({ email, expiresAt, origin: appOrigin(env) })));
   const unsigned = 'v1.' + payload;
-  const signature = await crypto.subtle.sign('HMAC', await sessionKey(env), ENCODER.encode(unsigned));
+  const key = await sessionKey(env);
+  let signature;
+  try {
+    signature = await crypto.subtle.sign('HMAC', key, ENCODER.encode(unsigned));
+  } catch {
+    throw serviceUnavailable('session_crypto_failed');
+  }
   return unsigned + '.' + encode(new Uint8Array(signature));
 }
 
@@ -205,9 +233,14 @@ export async function authenticate(request, env, now = Date.now()) {
   const [version, payload, signature] = tokenParts(authorization.slice('Bearer '.length));
   if (version !== 'v1') throw unauthorized();
 
-  const valid = await crypto.subtle.verify(
-    'HMAC', await sessionKey(env), decode(signature), ENCODER.encode(version + '.' + payload),
-  );
+  const key = await sessionKey(env);
+  const signatureBytes = decode(signature);
+  let valid;
+  try {
+    valid = await crypto.subtle.verify('HMAC', key, signatureBytes, ENCODER.encode(version + '.' + payload));
+  } catch {
+    throw serviceUnavailable('session_crypto_failed');
+  }
   if (!valid) throw unauthorized();
 
   const claims = parseJson(payload);

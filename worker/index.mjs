@@ -80,7 +80,10 @@ export function createHandler(fetcher = fetch, { accessFetcher = fetch } = {}) {
     const configuredOrigin = httpsOrigin(env.APP_ORIGIN);
     const workerOrigin = httpsOrigin(env.WORKER_ORIGIN);
     if (!configuredOrigin || !workerOrigin) {
-      return reply({ error: 'A extração ainda não está configurada.' }, 503, null);
+      return reply({
+        error: 'A extração ainda não está configurada.',
+        code: !configuredOrigin ? 'app_origin_invalid' : 'worker_origin_invalid',
+      }, 503, null);
     }
     if (url.origin !== workerOrigin) return reply({ error: 'Servidor não autorizado.' }, 403, null);
 

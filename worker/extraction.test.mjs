@@ -154,7 +154,7 @@ test('uses one strict Responses API request and returns server-owned provenance'
       assert.equal(url, 'https://api.openai.com/v1/responses');
       assert.equal(options.method, 'POST');
       assert.equal(options.headers.Authorization, `Bearer ${testSecret}`);
-      assert.equal(options.redirect, 'error');
+      assert.equal(options.redirect, 'manual');
       assert(options.signal instanceof AbortSignal);
       const request = JSON.parse(options.body);
       assert.equal(request.model, EXTRACTION_MODEL);
@@ -293,6 +293,47 @@ test('fails closed on extra keys, type mismatches, missing provenance and invali
     await assert.rejects(extractDocument(image, { apiKey: testSecret, fetcher: async () => respond(invalid) }),
       problem('invalid_extraction', 502));
   }
+});
+
+test('rejects the entire redirect range without following Location or reading its body', async () => {
+  const privateLocation = 'https://redirect.example/upstream-private-location';
+  for (let status = 300; status <= 399; status += 1) {
+    const calls = [];
+    let reads = 0;
+    let discarded = false;
+    const body = status === 304 ? null : new ReadableStream({
+      pull() { reads += 1; },
+      cancel() { discarded = true; },
+    }, { highWaterMark: 0 });
+
+    await assert.rejects(extractDocument(image, {
+      apiKey: testSecret,
+      fetcher: async (url, options) => {
+        calls.push(url);
+        assert.equal(options.redirect, 'manual');
+        return new Response(body, { status, headers: { Location: privateLocation } });
+      },
+    }), (error) => problem('extraction_rejected', 502)(error)
+      && /redirecionamento inesperado/u.test(error.message)
+      && !error.message.includes(privateLocation));
+    assert.deepEqual(calls, ['https://api.openai.com/v1/responses']);
+    assert.equal(reads, 0);
+    assert.equal(discarded, body !== null);
+  }
+});
+
+test('keeps the adjacent 299 and 400 statuses outside the redirect guard', async () => {
+  const data = documentResult();
+  const completed = completes([{ type: 'output_text', text: JSON.stringify(data) }]);
+  const result = await extractDocument(image, {
+    apiKey: testSecret,
+    fetcher: async () => Response.json(completed, { status: 299 }),
+  });
+  assert.deepEqual(result, { id: image.id, name: image.name, ...data });
+  await assert.rejects(extractDocument(image, {
+    apiKey: testSecret,
+    fetcher: async () => new Response('upstream-only details', { status: 400 }),
+  }), (error) => problem('extraction_rejected', 502)(error) && !/redirecionamento/u.test(error.message));
 });
 
 test('maps missing setup, busy service, upstream error and timeout to safe messages', async () => {

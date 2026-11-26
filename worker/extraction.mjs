@@ -380,13 +380,19 @@ export async function extractDocument({ id, name, bytes, mimeType }, { apiKey, f
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
-      redirect: 'error',
+      redirect: 'manual',
       signal,
     });
   } catch {
     throw unknownResult(signal);
   }
 
+  const redirected = response.status >= 300 && response.status < 400;
+  if (redirected) {
+    response.body?.cancel().catch(() => {});
+    // Never forward the API key or a guide to the destination of an upstream redirect.
+    throw new ExtractionError(502, 'extraction_rejected', 'O serviço de leitura respondeu com um redirecionamento inesperado. Tente novamente ou reveja a guia manualmente.');
+  }
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
     if (response.status === 429) {

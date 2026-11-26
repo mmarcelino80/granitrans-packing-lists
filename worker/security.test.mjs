@@ -47,12 +47,13 @@ async function accessToken(overrides = {}, headerOverrides = {}) {
 
 async function keySet(url, options) {
   assert.equal(url, issuer + '/cdn-cgi/access/certs');
-  assert.equal(options.redirect, 'error');
+  assert.equal(options.redirect, 'manual');
   assert.ok(options.signal instanceof AbortSignal);
   return Response.json({ keys: [publicKey] });
 }
 
 const authDependencies = { now, fetchImpl: keySet };
+const unavailable = (code) => ({ code, status: 503, message: 'O serviço de leitura está temporariamente indisponível.' });
 
 test('accepts an Access RS256 JWT for the configured issuer, audience and account', async () => {
   assert.deepEqual(await verifyAccessToken(await accessToken(), env, authDependencies), {
@@ -84,15 +85,78 @@ test('refuses missing, invalid or wrongly scoped Access credentials', async () =
   );
   await assert.rejects(
     verifyAccessToken(await accessToken(), { ...env, ALLOWED_EMAILS: 'one@a.com,two@a.com,three@a.com' }, authDependencies),
-    { status: 503 },
+    unavailable('access_allowlist_invalid'),
   );
 });
 
-test('fails closed when the Access key provider is unavailable', async () => {
-  await assert.rejects(verifyAccessToken(await accessToken(), env, {
-    now,
-    fetchImpl: async () => new Response(null, { status: 503 }),
-  }), { status: 503 });
+test('reports fixed diagnostics for invalid authentication settings', async () => {
+  const token = await accessToken();
+  const request = new Request(domain + '/auth', { headers: { 'Cf-Access-Jwt-Assertion': token } });
+  const cases = [
+    [{ ACCESS_TEAM_DOMAIN: 'https://invalid.example.com' }, 'access_config_invalid'],
+    [{ ACCESS_AUD: '' }, 'access_config_invalid'],
+    [{ ALLOWED_EMAILS: 123 }, 'access_allowlist_invalid'],
+    [{ ALLOWED_EMAILS: 'One@example.com,one@example.com' }, 'access_allowlist_invalid'],
+    [{ APP_ORIGIN: 'https://example.test/path' }, 'app_origin_invalid'],
+    [{ SESSION_SECRET: 'short test fixture' }, 'session_secret_invalid'],
+  ];
+  for (const [settings, code] of cases) {
+    await assert.rejects(accessLogin(request, { ...env, ...settings }, authDependencies), unavailable(code));
+  }
+});
+
+test('distinguishes JWKS transport, redirects, HTTP errors and invalid keysets without following redirects', async () => {
+  const token = await accessToken();
+  const cases = [
+    [() => { throw new Error('synthetic private transport detail'); }, 'access_jwks_transport'],
+    [() => new Response(null, { status: 302, headers: { Location: 'https://other.example.test/' } }), 'access_jwks_redirect'],
+    [() => new Response(null, { status: 304 }), 'access_jwks_redirect'],
+    [() => new Response(null, { status: 502 }), 'access_jwks_http'],
+    [() => new Response('<html>synthetic response</html>'), 'access_jwks_invalid'],
+    [() => Response.json({ keys: null }), 'access_jwks_invalid'],
+  ];
+  for (const [respond, code] of cases) {
+    let requests = 0;
+    await assert.rejects(verifyAccessToken(token, env, { now, fetchImpl: async (url, options) => {
+      requests++;
+      assert.equal(url, issuer + '/cdn-cgi/access/certs');
+      assert.equal(options.redirect, 'manual');
+      assert.ok(options.signal instanceof AbortSignal);
+      return respond();
+    } }), unavailable(code));
+    assert.equal(requests, 1);
+  }
+});
+
+test('distinguishes RSA import and verification exceptions from rejected credentials', async (context) => {
+  const token = await accessToken();
+  const malformedKey = { ...publicKey, n: undefined };
+  const invalidLookup = { now, fetchImpl: async () => Response.json({ keys: [malformedKey] }) };
+  await assert.rejects(verifyAccessToken(token, env, invalidLookup), unavailable('access_rsa_import_failed'));
+
+  context.mock.method(crypto.subtle, 'verify', async () => { throw new Error('synthetic private verification detail'); });
+  await assert.rejects(verifyAccessToken(token, env, authDependencies), unavailable('access_rsa_verify_failed'));
+  await assert.rejects(verifyAccessToken(token.replace(/[^.]+$/u, 'A'), env, authDependencies), { status: 401 });
+});
+
+test('returns a fixed diagnostic when importing, signing or verifying an HMAC session fails', async (context) => {
+  const request = new Request(domain + '/auth', { headers: { 'Cf-Access-Jwt-Assertion': await accessToken() } });
+  const failure = unavailable('session_crypto_failed');
+  const importKey = crypto.subtle.importKey.bind(crypto.subtle);
+  const mockedImport = context.mock.method(crypto.subtle, 'importKey', async (...args) => {
+    if (args[2].name === 'HMAC') throw new Error('synthetic private key detail');
+    return importKey(...args);
+  });
+  await assert.rejects(accessLogin(request, env, authDependencies), failure);
+  mockedImport.mock.restore();
+
+  const mockedSign = context.mock.method(crypto.subtle, 'sign', async () => { throw new Error('synthetic signing error'); });
+  await assert.rejects(accessLogin(request, env, authDependencies), failure);
+  mockedSign.mock.restore();
+
+  context.mock.method(crypto.subtle, 'verify', async () => { throw new Error('synthetic private verification detail'); });
+  await assert.rejects(authenticate(sessionRequest('v1.e30.AQ'), env, now), failure);
+  await assert.rejects(authenticate(sessionRequest('v1.e30.A'), env, now), { status: 401 });
 });
 
 function flippedSignature(signature) {
