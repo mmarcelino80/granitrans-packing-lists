@@ -1,5 +1,6 @@
 import { buildPackingList, materialTotals } from './packing-list.mjs';
 import { prepareReview, reviewTotals } from './review.mjs';
+import { canonicalLogisticsUnit, translateLogisticsText, translateLogisticsUnit } from './logistics-terms.mjs';
 
 export const WAREHOUSES = Object.freeze([
   'Negrais', 'Braga', 'Penafiel', 'Coimbra', 'Batalha', 'Loulé', 'Logística',
@@ -30,43 +31,39 @@ export function documentTitle(unloading) {
   })[documentLanguage(unloading)];
 }
 
+const standaloneNotes = new Set(['stock', 'encomenda', 'escovar', 'encosto']);
+
 function notesFor(row, language) {
-  const labels = {
-    pt: { stock: 'STOCK', encomenda: 'ENCOMENDA', escovar: 'ESCOVAR', encosto: 'ENCOSTO' },
-    es: { stock: 'STOCK', encomenda: 'PEDIDO', escovar: 'CEPILLAR', encosto: 'COPETE' },
-    'pt-fr': { stock: 'STOCK', encomenda: 'ENCOMENDA / COMMANDE', escovar: 'ESCOVAR / BROSSER', encosto: 'ENCOSTO / CRÉDENCE' },
-  }[language];
-  const notes = clean(row.notes).split(/\s*[;+]\s*/u).filter(Boolean);
+  const notes = clean(row.notes).split(/\s*;\s*|\s+\+\s+/u).filter(Boolean);
   const classification = notes.find((note) => ['stock', 'encomenda'].includes(normalized(note)));
-  const annotations = notes.filter((note) => note !== classification).map((note) => labels[normalized(note)] ?? note);
-  return [row.client ? `cliente ${row.client}` : labels[normalized(classification)], ...annotations].filter(Boolean).join('; ');
+  const client = row.client ? (language === 'pt-fr' ? 'client ' : 'cliente ') + row.client : null;
+  return [
+    client ?? translateLogisticsText(classification?.toUpperCase(), language, row),
+    ...notes.filter((note) => note !== classification).map((note) =>
+      translateLogisticsText(standaloneNotes.has(normalized(note)) ? note.toUpperCase() : note, language, row)),
+  ].filter(Boolean).join('; ');
 }
 
-function renderedUnit(unit, count, language) {
-  const singular = Number(count.replace(',', '.')) === 1;
-  if (language !== 'es') {
-    if (!singular) return ({ palete: 'Paletes', cavalete: 'cavaletes' })[normalized(unit)] ?? unit;
-    return unit;
-  }
-  return ({
-    chapa: singular ? 'tabla' : 'tablas', chapas: singular ? 'tabla' : 'tablas',
-    palete: singular ? 'palé' : 'palés', paletes: singular ? 'palé' : 'palés',
-    cavalete: singular ? 'caballete' : 'caballetes', cavaletes: singular ? 'caballete' : 'caballetes',
-  })[normalized(unit)] ?? unit;
+function localizedRow(row, language) {
+  return {
+    ...row,
+    unit: translateLogisticsUnit(row.unit, row.quantity, language),
+    description: translateLogisticsText(row.description, language, row),
+    notes: notesFor(row, language),
+  };
 }
 
 function groupRows(rows, language) {
   const groups = new Map();
   for (const row of rows) {
-    const notes = notesFor(row, language);
-    const unit = ({ chapas: 'chapa', paletes: 'palete', cavaletes: 'cavalete' })[normalized(row.unit)] ?? row.unit;
-    const key = JSON.stringify([row.destination, row.description, row.commercialName, row.thickness, row.finish, row.client, unit, notes, row.reference]);
-    if (!groups.has(key)) groups.set(key, { ...row, unit, notes, amounts: [] });
+    const unit = canonicalLogisticsUnit(row.unit);
+    const key = JSON.stringify([row.destination, row.description, row.commercialName, row.thickness, row.finish, row.client, unit, notesFor(row, language), row.reference]);
+    if (!groups.has(key)) groups.set(key, { ...row, unit, amounts: [] });
     groups.get(key).amounts.push({ quantity: row.quantity, unit });
   }
   return [...groups.values()].map(({ amounts, ...row }) => {
     const [{ quantity: count }] = materialTotals(amounts);
-    return { ...row, quantity: count, unit: renderedUnit(row.unit, count, language) };
+    return localizedRow({ ...row, quantity: count }, language);
   });
 }
 
@@ -123,12 +120,12 @@ export function organizeGuides(documents, { mobile = false, route = [], date = '
     if (dates.size > 1) warnings.push(`${unloading}: datas de carregamento divergentes.`);
     const loadingDate = dates.size === 1 ? [...dates][0] : date;
     const valid = rows.filter((row) => row.quantity !== '?' && row.unit);
-    const materials = [...groupRows(valid, language), ...rows.filter((row) => !valid.includes(row))];
+    const materials = [...groupRows(valid, language), ...rows.filter((row) => !valid.includes(row)).map((row) => localizedRow(row, language))];
     const stops = [...new Set(materials.map((row) => row.destination))];
     const lines = stops.flatMap((destination) => [
       destinations[language](destination),
       ...materials.filter((row) => row.destination === destination).map((row) =>
-        `${row.quantity} ${row.unit === 'chapa' ? 'ch' : row.unit} ${row.description}${row.notes ? ' (' + row.notes + ')' : ''}`),
+        `${row.quantity} ${language === 'pt' && canonicalLogisticsUnit(row.unit) === 'Chapa' ? 'ch' : row.unit} ${row.description}${row.notes ? ' (' + row.notes + ')' : ''}`),
       '',
     ]);
     const headingDate = loadingDate ? (language === 'es' ? 'Fecha de carga: ' : 'Data de carga: ') + formatDate(loadingDate) : '';

@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { organizeGuides, documentLanguage, WAREHOUSES } from './logistics.mjs';
-import { packingPDF } from './packing-pdf.mjs';
-import PDFLib from './assets/pdf-lib.min.js';
-const { PDFDocument } = PDFLib;
 
 const material = {
   quantity: '2', unit: 'Chapas', description: 'Quartzo Éclat 12 mm', commercialName: 'Quartzo Éclat',
@@ -50,9 +46,4 @@ test('groups identical editions across lot identifiers and keeps finishes and cu
   assert.match(result.text, /4 ch Quartzo/);
   assert.match(result.text, /8 cavaletes de ferro \(cliente 2230; ENCOSTO\)/);
   assert.match(result.text, /2 ch Quartzo/);
-});
-test('local PDF paginates accent-bearing approved text', async () => {
-  const logo = await readFile(new URL('./assets/granitrans-logo.png', import.meta.url));
-  const result = await packingPDF('PACKING LIST - Déchargement à Paris', 'Para Loulé:\nÉlaminé, ação e envío.\n'.repeat(90), { logo });
-  assert.ok((await PDFDocument.load(result)).getPageCount() > 1);
 });

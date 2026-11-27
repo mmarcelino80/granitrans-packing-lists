@@ -1044,14 +1044,8 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   }
 }
 
-.logistics-mode .intro-card,
-.logistics-mode .materials-card,
-.logistics-mode .preview-card,
-.logistics-mode .document-actions,
-.logistics-mode .mobile-nav,
 .logistics-mode #custom-toggle,
-.logistics-mode #custom-destination,
-.logistics-mode #continue-manual {
+.logistics-mode #custom-destination {
   display: none;
 }
 

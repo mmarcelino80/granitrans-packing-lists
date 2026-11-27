@@ -8,9 +8,9 @@ set "PREVIEW_PYTHON=%PREVIEW_ROOT%\venv\Scripts\python.exe"
 
 if not exist "%~dp0private_preview.py" goto missing_installation
 if not exist "%PREVIEW_PYTHON%" goto missing_installation
-if not exist "%PREVIEW_ROOT%\app-logistica\index.html" goto missing_installation
+if not exist "%~dp0private_preview_revision.py" goto missing_installation
 
-"%PREVIEW_PYTHON%" -B "%~dp0private_preview.py" --source "%PREVIEW_ROOT%\app-logistica"
+"%PREVIEW_PYTHON%" -B "%~dp0private_preview.py"
 set "PREVIEW_EXIT=%ERRORLEVEL%"
 if "%PREVIEW_EXIT%"=="0" exit /b 0
 echo.

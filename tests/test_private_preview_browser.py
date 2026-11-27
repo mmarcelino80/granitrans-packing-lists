@@ -6,6 +6,7 @@ from pathlib import Path
 from shutil import which
 from subprocess import run
 from time import time
+from unicodedata import normalize
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
@@ -131,6 +132,10 @@ class PrivatePreviewBrowserTests(unittest.TestCase):
         self.assertIs(type(self.metrics[0][3]), int)
         self.assertGreaterEqual(self.metrics[0][3], 0)
 
+    def assert_no_individual_review(self, page):
+        expect(page.locator("#materials, #extraction-review, #apply-review, #continue-manual, #preview, #export")).to_have_count(0)
+        expect(page.get_by_text("Acrescentar materiais revistos", exact=True)).to_have_count(0)
+
     def analyze_simulated(self, page, case):
         page.locator("#guides").set_input_files(load_fixture(ROOT, case).file_payload())
         with page.expect_popup() as opened:
@@ -139,7 +144,7 @@ class PrivatePreviewBrowserTests(unittest.TestCase):
         popup.wait_for_url(SIM_WORKER_ORIGIN + "/auth?*")
         expect(page.locator(".logistics-document textarea")).to_be_visible()
         expect(page.locator("#private-preview")).to_contain_text(re.compile("simula", re.I))
-        expect(page.locator("#download")).to_be_disabled()
+        self.assert_no_individual_review(page)
         self.assertFalse(self.backend)
         self.assertFalse(any(url.startswith(WORKER_ORIGIN + "/") for url in self.requests))
         self.assert_metric("simulation", case)
@@ -175,24 +180,26 @@ class PrivatePreviewBrowserTests(unittest.TestCase):
         page, _ = self.open_preview()
         self.analyze_simulated(page, "foto-guia-ilegivel.jpg")
         expect(page.locator(".logistics-results ul")).to_contain_text("A mancha tapa")
-        expect(page.locator(".logistics-document textarea")).to_have_value(re.compile(r"\? Paletes"))
+        expect(page.locator(".logistics-document textarea")).to_have_value(re.compile(r"\? palettes"))
         expect(page.get_by_role("button", name="Aprovar", exact=True).last).to_be_disabled()
 
     def test_simulation_preserves_two_pdf_pages(self):
         page, _ = self.open_preview()
         self.analyze_simulated(page, "guia-duas-paginas.pdf")
         expect(page.locator(".logistics-document textarea")).to_have_value(
-            re.compile(r"Quartzito Aurora Teste 20 mm Acetinado[\s\S]*Ladrilho Íris Teste 10 mm Mate")
+            re.compile(r"Quartzito Aurora Teste 20 mm Satinado[\s\S]*Ladrilho Íris Teste 10 mm Mate[\s\S]*8 caballetes de hierro")
         )
 
     def test_desktop_separates_unloading_sites_and_requires_reapproval_after_edit(self):
         page, _ = self.open_preview()
+        self.assert_no_individual_review(page)
         page.locator("#guides").set_input_files([
             load_fixture(ROOT, name).file_payload() for name in (CASE, "guia-duas-paginas.pdf")
         ])
         page.locator("#analyze-guides").click()
         cards = page.locator(".logistics-document")
         expect(cards).to_have_count(2)
+        self.assert_no_individual_review(page)
         expect(cards.nth(0)).to_contain_text("Descarga em Negrais")
         expect(cards.nth(1)).to_contain_text("Descarga en Santiago")
         first = cards.first
@@ -202,16 +209,26 @@ class PrivatePreviewBrowserTests(unittest.TestCase):
         approve.click()
         expect(download).to_be_enabled()
         editor = first.locator("textarea")
-        editor.fill(editor.input_value() + "\nConferência — ação.")
+        approved_line = "Conferência — ação | ¡Atención! Envío | Œuvre\u202f: déjà."
+        editor.fill(editor.input_value() + "\n".join(["", *[approved_line] * 85]))
         expect(download).to_be_disabled()
         approve.click()
         with page.expect_download() as saved:
             download.click()
         self.assertTrue(saved.value.path().read_bytes().startswith(b"%PDF"))
+        if which("pdftotext"):
+            extracted = run(
+                ["pdftotext", "-raw", str(saved.value.path()), "-"],
+                check=True, capture_output=True, encoding="utf-8",
+            ).stdout
+            expected = normalize("NFC", approved_line).replace("\u202f", " ")
+            actual = normalize("NFC", extracted).replace("\u202f", " ")
+            self.assertEqual(actual.count(expected), 85)
 
     def test_mobile_preserves_french_route_and_blocks_unresolved_source(self):
         page, _ = self.open_preview()
         page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_individual_review(page)
         page.get_by_role("button", name="Thionville", exact=True).click()
         page.get_by_role("button", name="Paris", exact=True).click()
         page.locator("#guides").set_input_files(load_fixture(ROOT, "foto-guia-ilegivel.jpg").file_payload())
@@ -219,6 +236,7 @@ class PrivatePreviewBrowserTests(unittest.TestCase):
         result = page.locator(".logistics-document")
         expect(result.locator("pre")).to_contain_text("com primeira descarga em Thionville")
         expect(result.locator("pre")).to_contain_text("Bonjour")
+        self.assert_no_individual_review(page)
         expect(result.get_by_role("button", name="Aprovar", exact=True)).to_be_disabled()
         expect(result.get_by_role("link", name="Preparar email")).to_be_hidden()
 

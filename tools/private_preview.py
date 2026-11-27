@@ -6,7 +6,6 @@ import os
 import posixpath
 import re
 import secrets
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,15 +16,16 @@ from playwright.sync_api import Error as BrowserError, sync_playwright
 
 if __package__:
     from . import private_preview_policy as policy
+    from .private_preview_revision import RevisionError, resolve_revision, verify_checkout
 else:
     import private_preview_policy as policy
+    from private_preview_revision import RevisionError, resolve_revision, verify_checkout
 
 
 APP_URL = policy.APP_URL
 WORKER_ORIGIN = policy.WORKER_ORIGIN
 SIM_WORKER_ORIGIN = "https://packing-list-simulation.example.test"
 APP_TITLE = "Granitrans v0.2 — Ambiente de testes"
-APPROVED_COMMIT = "d34fa31df4316ecc7e125c9fa26f6e2689f0b8ea"
 MODES = {"simulation": "Simulação", "auth": "Autenticação", "live": "Extração real"}
 NONCE = re.compile(r"[A-Za-z0-9_-]{32,128}")
 SCRIPT = "text/javascript; charset=utf-8"
@@ -35,7 +35,8 @@ APP_FILES = {
     "manifest.webmanifest": "application/manifest+json",
     **dict.fromkeys(
         ["app.mjs", "packing-list.mjs", "extraction-client.mjs", "guides.mjs", "review.mjs",
-         "logistics.mjs", "logistics-ui.mjs", "packing-pdf.mjs", "assets/pdf-lib.min.js"], SCRIPT
+         "logistics.mjs", "logistics-terms.mjs", "logistics-ui.mjs", "packing-pdf.mjs", "assets/pdf-lib.min.js",
+         "assets/fontkit.min.js"], SCRIPT
     ),
     **dict.fromkeys(
         [
@@ -45,6 +46,8 @@ APP_FILES = {
         "image/png",
     ),
     "assets/app-icons.svg": "image/svg+xml",
+    "assets/NotoSans-Regular.ttf": "font/ttf",
+    "assets/NotoSans-Bold.ttf": "font/ttf",
 }
 APP_SECURITY = {
     "Cache-Control": "no-store",
@@ -84,21 +87,6 @@ button.addEventListener('click', async () => {
 
 class PreviewError(RuntimeError):
     """A failure that can be reported without exposing browser or request data."""
-
-
-def verify_checkout(source):
-    def git(*args):
-        return subprocess.run(
-            ["git", "-C", str(source), *args], capture_output=True, text=True, check=True, timeout=20,
-        ).stdout.strip()
-
-    try:
-        if Path(git("rev-parse", "--show-toplevel")).resolve() != source.resolve():
-            raise PreviewError("A pasta indicada não é a raiz da cópia de testes.")
-        if git("rev-parse", "HEAD") != APPROVED_COMMIT or git("status", "--porcelain"):
-            raise PreviewError("A cópia de testes deve estar limpa na revisão aprovada. Execute a instalação inicial.")
-    except (OSError, subprocess.SubprocessError):
-        raise PreviewError("Não foi possível verificar a cópia de testes. Execute a instalação inicial.") from None
 
 
 def is_real_extract(url):
@@ -353,13 +341,16 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description=APP_TITLE)
-    parser.add_argument("--source", required=True, type=Path, help="Cópia local independente da aplicação")
+    parser.add_argument("--source", type=Path, help="Cópia local independente da aplicação")
     args = parser.parse_args()
     try:
-        verify_checkout(args.source)
+        revision = resolve_revision()
+        source = args.source or Path(os.environ["LOCALAPPDATA"]) / "GranitransV02Teste" / f"app-{revision}"
+        verify_checkout(source, revision)
+        print(f"Revisão do teste privado: {revision}")
         mode, case = choose_mode()
-        run_preview(args.source, mode, case)
-    except (PreviewError, policy.FixtureError) as error:
+        run_preview(source, mode, case)
+    except (PreviewError, RevisionError, policy.FixtureError) as error:
         print(str(error), file=sys.stderr)
         return 1
     except (BrowserError, OSError, KeyError, ValueError):

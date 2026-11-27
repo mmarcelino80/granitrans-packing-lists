@@ -740,7 +740,10 @@ if (extractionClient && extractionConfig.logisticsEnabled) {
   document.body.classList.add('logistics-mode');
   ui.date.value = '';
   const container = element('section', 'card logistics-results');
-  ui.preview.after(container);
+  // Keep the manual-only controls out of the tab order and accessibility tree in both layouts.
+  for (const node of [ui.materials, ui['continue-manual'], ui.introduction.closest('.intro-card'),
+    ui.approve.closest('.document-actions'), document.querySelector('.mobile-nav')]) node.remove();
+  ui.preview.replaceWith(container);
   logistics = createLogisticsUI(container, () => ({
     route: state.route, guides: state.guides, date: ui.date.value, busy: state.analyzing,
   }));
