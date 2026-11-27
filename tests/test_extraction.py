@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from functools import partial
 from http.server import ThreadingHTTPServer
 from shutil import which
+from subprocess import run
 from threading import Thread
 from time import time
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -87,9 +88,11 @@ class ExtractionTests(unittest.TestCase):
         cls.addClassCleanup(cls.server.shutdown)
         cls.origin = f"http://127.0.0.1:{cls.server.server_port}"
         cls.url = cls.origin + PROJECT_PATH
-        cls.bridge_script = (ROOT / "worker/auth-bridge.mjs").read_text(encoding="utf-8").replace(
-            "export async function startAuthBridge", "async function startAuthBridge", 1
-        )
+        cls.bridge_script = run(
+            ["node", "--input-type=module", "-e",
+             "import { authBridgeScript } from './worker/auth-bridge.mjs'; process.stdout.write(authBridgeScript);"],
+            cwd=ROOT, check=True, capture_output=True, encoding="utf-8",
+        ).stdout
 
         playwright = sync_playwright().start()
         cls.addClassCleanup(playwright.stop)
@@ -153,8 +156,8 @@ class ExtractionTests(unittest.TestCase):
                     "Content-Security-Policy": "default-src 'none'; connect-src 'self'; script-src 'nonce-test'",
                 },
                 body=(
-                    f"<p id='status'>A confirmar sessão</p><script nonce='test'>{self.bridge_script}\n"
-                    f"function completeLogin() {{ return startAuthBridge({json.dumps(config)}); }} "
+                    "<p id='status'>A confirmar sessão</p><script nonce='test'>"
+                    f"function completeLogin() {{ return ({self.bridge_script})({json.dumps(config)}); }} "
                     f"{invoke}</script>"
                 ),
             )

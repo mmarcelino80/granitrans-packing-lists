@@ -39,9 +39,10 @@ Com Node.js 20 ou posterior, instale as dependências do Worker e execute os tes
 ```sh
 npm ci --prefix worker
 node --test
+npm --prefix worker run test:runtime
 ```
 
-Os testes de navegador usam Python e Playwright com Chromium. Com essas dependências instaladas, execute `python3 -B -m unittest discover -s tests -v`. Os testes servem a aplicação no caminho `/granitrans-packing-lists/`.
+Os testes de navegador usam Python e Playwright. Instale os navegadores com `python3 -m playwright install chromium firefox` e execute `python3 -B -m unittest discover -s tests -v`. Os testes simulam o Access e executam o HTML de autenticação do Worker compilado em Chromium e Firefox. Os fluxos da aplicação usam o caminho `/granitrans-packing-lists/`.
 
 As [guias sintéticas e os resultados esperados](tests/fixtures/gpt-6-luna/) servem de referência para a futura validação real. Os testes locais usam respostas simuladas.
 

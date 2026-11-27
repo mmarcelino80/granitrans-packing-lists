@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild index.mjs --bundle --platform=browser --format=esm --target=es2022 --drop:console --outfile=.generated/index.mjs",
+    "build": "esbuild index.mjs --bundle --platform=browser --format=esm --target=es2022 --keep-names --drop:console --outfile=.generated/index.mjs",
     "test": "node --test",
-    "test:runtime": "esbuild runtime-tests/auth.mjs --bundle --platform=browser --format=esm --target=es2022 --drop:console --outfile=.generated/workerd-auth.mjs && workerd test workerd-test.capnp"
+    "test:runtime": "esbuild runtime-tests/auth.mjs --bundle --platform=browser --format=esm --target=es2022 --keep-names --drop:console --outfile=.generated/workerd-auth.mjs && workerd test workerd-test.capnp"
   },
   "dependencies": {
     "pdf-lib": "1.17.1"

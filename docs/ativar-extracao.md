@@ -95,6 +95,8 @@ Para esta instalação, bastam os dois segredos acima. A chave OpenAI só será 
 2. **Acesso permitido.** Com `EXTRACTION_ENABLED = "false"`, abra [a página de verificação do Worker](https://granitrans-packing-list-extraction.mmarcelino-pt.workers.dev/auth) numa janela privada. Use um email autorizado e introduza o PIN recebido. O Worker responde ao `POST /session-check` da janela com HTTP 200 e `{"authenticated":true}`. Confirme a mensagem «Identidade e sessão verificadas. Nenhuma guia foi enviada.». Esta verificação dispensa a OpenAI e a quota de guias.
 3. **Acesso recusado.** Feche todas as janelas privadas, volte a abrir uma e teste um endereço fora da lista a que tenha acesso. A Cloudflare pode mostrar «A code has been emailed to you» mesmo quando não envia PIN. Confirme que o endereço não recebe PIN e não chega à página de verificação. Em **Zero Trust → Insights → Logs → Access authentication logs**, confirme a aplicação, o email e a política para a autenticação bem-sucedida. O Access regista a tentativa com One-time PIN depois da submissão de um código, pelo que um endereço bloqueado sem PIN pode não aparecer nessa lista. [Comportamento do One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/#log-in-with-otp) · [Registos de autenticação Access](https://developers.cloudflare.com/cloudflare-one/insights/logs/dashboard-logs/access-authentication-logs/)
 
+O bloqueio de `favicon.ico` é esperado com a CSP restritiva de `/auth`. Para verificar a autenticação, confirme o POST a `/session-check` e a mensagem final da página.
+
 Se `/auth` devolver 503, anote apenas o campo fixo `code` da resposta. Use-o para identificar a etapa antes de alterar a configuração.
 
 | Código | Etapa a verificar |

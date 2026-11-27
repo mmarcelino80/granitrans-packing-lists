@@ -1,4 +1,4 @@
-import { startAuthBridge } from './auth-bridge.mjs';
+import { authBridgeScript } from './auth-bridge.mjs';
 
 const SESSION_TTL = 15 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -205,11 +205,11 @@ export async function accessLogin(request, env, dependencies = {}) {
   const claims = await verifyAccessToken(request.headers.get('Cf-Access-Jwt-Assertion'), env, { ...dependencies, now });
   const expiresAt = Math.min(claims.expiresAt, now + SESSION_TTL);
   const token = await signSession({ email: claims.email, expiresAt }, env);
-  const config = JSON.stringify({ target: appOrigin(env), nonce, token, expiresAt });
+  const config = JSON.stringify({ target: appOrigin(env), nonce, token, expiresAt }).replaceAll('<', '\\u003c');
   const scriptNonce = encode(crypto.getRandomValues(new Uint8Array(24)));
 
   return new Response(
-    `<!doctype html><html lang="pt-PT"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Packing List</title><p id="status" role="status">A verificar a sessão Cloudflare Access…</p><script nonce="${scriptNonce}">(${startAuthBridge.toString()})(${config});</script></html>`,
+    `<!doctype html><html lang="pt-PT"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Packing List</title><p id="status" role="status">A verificar a sessão Cloudflare Access…</p><script nonce="${scriptNonce}">(${authBridgeScript})(${config});</script></html>`,
     {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',

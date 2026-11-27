@@ -1,8 +1,9 @@
-// This function is embedded in the Access-protected page and runs in the Worker's browser origin.
-export async function startAuthBridge({ target, nonce, token, expiresAt }) {
+// The Worker bundle must treat this browser script as data. Serializing a compiled function
+// would leave bundler helpers behind when the function runs in the separate browser page.
+export const authBridgeScript = String.raw`async function startAuthBridge({ target, nonce, token, expiresAt }) {
   const opener = window.opener;
   const statusNode = document.getElementById('status');
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = { Authorization: 'Bearer ' + token };
   let processing = false;
 
   function notify(data) {
@@ -79,4 +80,4 @@ export async function startAuthBridge({ target, nonce, token, expiresAt }) {
     }
   });
   notify({ type: 'granitrans:session', expiresAt });
-}
+}`;
