@@ -1,0 +1,30 @@
+name = "granitrans-packing-list-extraction"
+main = ".generated/index.mjs"
+compatibility_date = "2026-11-19"
+workers_dev = true
+preview_urls = false
+
+[observability]
+enabled = false
+
+[observability.logs]
+enabled = false
+invocation_logs = false
+
+[vars]
+EXTRACTION_ENABLED = "false"
+WORKER_ORIGIN = "https://granitrans-packing-list-extraction.mmarcelino-pt.workers.dev"
+APP_ORIGIN = "https://mmarcelino80.github.io"
+# Fill Access identifiers only in the ignored wrangler.local.toml used for deployment.
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+QUOTA_PER_USER_DAILY = "25"
+QUOTA_GLOBAL_DAILY = "50"
+
+[[durable_objects.bindings]]
+name = "USAGE_QUOTA"
+class_name = "QuotaCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaCounter"]

@@ -1,0 +1,8 @@
+node_modules/
+.generated/
+.wrangler/
+wrangler.local.*
+.dev.vars
+.dev.vars.*
+.env
+.env.*

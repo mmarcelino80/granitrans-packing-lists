@@ -1003,6 +1003,37 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   }
 }
 
+.material-source {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+#extraction-review {
+  margin-top: 12px;
+}
+
+.review-detail, #review-totals {
+  margin-top: 8px;
+}
+
+.review-detail summary {
+  min-height: 32px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.review-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.review-fields input {
+  margin-top: 4px;
+}
+
 @media (max-width: 360px) {
   .export-actions {
     grid-template-columns: 1fr;
@@ -1011,4 +1042,23 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   .destination-btn {
     font-size: .875rem;
   }
+}
+
+.logistics-mode #custom-toggle,
+.logistics-mode #custom-destination {
+  display: none;
+}
+
+.logistics-mode .workspace { max-width: none; align-items: stretch; }
+.logistics-results { grid-area: preview; }
+.logistics-document [hidden] { display: none; }
+.logistics-document { display: grid; gap: .85rem; margin-block: 1rem; }
+.logistics-document textarea,
+.logistics-document pre { width: 100%; min-height: 14rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.logistics-document textarea { min-height: 45vh; }
+.logistics-document button { justify-self: start; }
+.logistics-results ul { padding-inline-start: 1.4rem; }
+@media (min-width: 861px) {
+  .logistics-mode .workspace { grid-template-columns: minmax(16rem, 1fr) minmax(25rem, 2fr); min-height: 84vh; }
+  .logistics-mode .route-section { display: none; }
 }

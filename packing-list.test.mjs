@@ -163,6 +163,17 @@ test('TXT sums only materials with matching destination, client, unit, descripti
   assert.ok(text.includes(`${lines[0]}\n\n${lines[1]}`));
 });
 
+test('TXT keeps lines separate when structured commercial fields differ', () => {
+  const keyFields = ['commercialName', 'thickness', 'finish', 'reference', 'unloadingLocation'];
+  for (const key of keyFields) {
+    const text = buildPackingList({
+      ...shipment,
+      materials: [{ ...material, [key]: 'Valor A' }, { ...material, [key]: 'Valor B' }],
+    });
+    assert.equal(text.split('\n').filter((line) => /^-\d/.test(line)).length, 2, key);
+  }
+});
+
 test('explicit material units agree with exact or aggregated quantities and custom units remain intact', () => {
   const materials = [
     { ...material, quantity: '1,00', unit: 'chapas', description: 'Branco Encosto 1,2 cm' },

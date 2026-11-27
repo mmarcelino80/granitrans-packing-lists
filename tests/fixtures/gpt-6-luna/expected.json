@@ -1,0 +1,293 @@
+{
+  "dataset": "Guias sintéticas para avaliação da extração de Packing Lists",
+  "scoring": [
+    "Comparar páginas, linhas, quantidades, unidades, descrições e totais com o resultado esperado de cada guia.",
+    "As descrições de avisos podem variar se conservarem o campo, o motivo e o significado.",
+    "Os nomes de ficheiro e os identificadores de proveniência são atribuídos pelo Worker e não fazem parte da resposta esperada do modelo.",
+    "A alternativa manual e a aprovação humana fazem parte da validação da aplicação."
+  ],
+  "cases": [
+    {
+      "file": "foto-guia-espessura.png",
+      "mediaType": "image/png",
+      "expected": {
+        "loadingWarehouse": "Braga",
+        "unloadingWarehouse": "Negrais",
+        "loadingDate": "2026-11-26",
+        "pages": [
+          {
+            "page": 1,
+            "lines": [
+              {
+                "quantity": "2",
+                "unit": "Chapas",
+                "description": "Quartzo Ágata Teste 12 mm Polido",
+                "commercialName": "Quartzo Ágata Teste",
+                "thickness": "12 mm",
+                "finish": "Polido",
+                "reference": "TESTE-QA-01",
+                "client": "TST-101",
+                "destination": "Loulé",
+                "unloadingLocation": "Cais fictício 4",
+                "notes": "stock",
+                "issues": []
+              },
+              {
+                "quantity": "1",
+                "unit": "Chapa",
+                "description": "Granito Névoa Teste Escovado",
+                "commercialName": "Granito Névoa Teste",
+                "thickness": null,
+                "finish": "Escovado",
+                "reference": "TESTE-GN-02",
+                "client": "TST-102",
+                "destination": "Loulé",
+                "unloadingLocation": "Pórtico de teste",
+                "notes": "encosto",
+                "issues": []
+              }
+            ],
+            "totals": [],
+            "issues": []
+          }
+        ],
+        "totals": [
+          {
+            "scope": "document",
+            "destination": null,
+            "unit": "Chapas",
+            "quantity": "3"
+          }
+        ],
+        "issues": []
+      },
+      "checks": [
+        "Na primeira linha, a espessura é 12 mm, conforme o Artigo. O valor 20 mm da coluna Esp deve ser ignorado.",
+        "Na segunda linha, a espessura é null. O valor 30 mm da coluna Esp deve ser ignorado.",
+        "Local de Carga Braga e Local de Descarga Negrais na primeira página."
+      ]
+    },
+    {
+      "file": "foto-guia-ilegivel.jpg",
+      "mediaType": "image/jpeg",
+      "expected": {
+        "loadingWarehouse": "Valence",
+        "unloadingWarehouse": "Paris",
+        "loadingDate": "2026-11-26",
+        "pages": [
+          {
+            "page": 1,
+            "lines": [
+              {
+                "quantity": null,
+                "unit": "Paletes",
+                "description": "Amostras Bruma Teste",
+                "commercialName": "Amostras Bruma Teste",
+                "thickness": null,
+                "finish": null,
+                "reference": "TESTE-AB-10",
+                "client": "TST-103",
+                "destination": "Paris",
+                "unloadingLocation": null,
+                "notes": "stock",
+                "issues": [
+                  {
+                    "field": "quantity",
+                    "reason": "illegible",
+                    "detail": "A mancha tapa o valor da quantidade."
+                  }
+                ]
+              },
+              {
+                "quantity": "1",
+                "unit": "Palete",
+                "description": "Cerâmica Duna Teste 8 mm Acetinado",
+                "commercialName": "Cerâmica Duna Teste",
+                "thickness": "8 mm",
+                "finish": "Acetinado",
+                "reference": "TESTE-CD-11",
+                "client": null,
+                "destination": "Paris",
+                "unloadingLocation": "Cais fictício 7",
+                "notes": null,
+                "issues": []
+              }
+            ],
+            "totals": [],
+            "issues": []
+          }
+        ],
+        "totals": [],
+        "issues": []
+      },
+      "checks": [
+        "Na primeira linha, a quantidade está integralmente tapada. Espera-se null com um aviso de quantidade ilegível.",
+        "Não há totais impressos. Esperam-se listas de totais vazias.",
+        "Os travessões nas células indicam ausência de valor.",
+        "Local de Carga Valence e Local de Descarga Paris na primeira página."
+      ]
+    },
+    {
+      "file": "guia-duas-paginas.pdf",
+      "mediaType": "application/pdf",
+      "expected": {
+        "loadingWarehouse": "Coimbra",
+        "unloadingWarehouse": "Santiago",
+        "loadingDate": "2026-11-26",
+        "pages": [
+          {
+            "page": 1,
+            "lines": [
+              {
+                "quantity": "2",
+                "unit": "Chapas",
+                "description": "Quartzito Aurora Teste 20 mm Acetinado",
+                "commercialName": "Quartzito Aurora Teste",
+                "thickness": "20 mm",
+                "finish": "Acetinado",
+                "reference": "TESTE-QA-20",
+                "client": "TST-104",
+                "destination": "Paris",
+                "unloadingLocation": "Pórtico de teste",
+                "notes": "stock",
+                "issues": []
+              },
+              {
+                "quantity": "1",
+                "unit": "Chapa",
+                "description": "Quartzito Aurora Teste 30 mm Polido",
+                "commercialName": "Quartzito Aurora Teste",
+                "thickness": "30 mm",
+                "finish": "Polido",
+                "reference": "TESTE-QA-30",
+                "client": "TST-105",
+                "destination": "Loulé",
+                "unloadingLocation": "Cais fictício 9",
+                "notes": "encosto",
+                "issues": []
+              }
+            ],
+            "totals": [
+              {
+                "scope": "page",
+                "destination": null,
+                "unit": "Chapas",
+                "quantity": "3"
+              },
+              {
+                "scope": "destination",
+                "destination": "Paris",
+                "unit": "Chapas",
+                "quantity": "2"
+              }
+            ],
+            "issues": []
+          },
+          {
+            "page": 2,
+            "lines": [
+              {
+                "quantity": "2",
+                "unit": "Paletes",
+                "description": "Amostras Foz Teste",
+                "commercialName": "Amostras Foz Teste",
+                "thickness": null,
+                "finish": null,
+                "reference": "TESTE-AF-01",
+                "client": null,
+                "destination": "Loulé",
+                "unloadingLocation": "Cais fictício 9",
+                "notes": "stock",
+                "issues": []
+              },
+              {
+                "quantity": "1,25",
+                "unit": "m²",
+                "description": "Ladrilho Íris Teste 10 mm Mate",
+                "commercialName": "Ladrilho Íris Teste",
+                "thickness": "10 mm",
+                "finish": "Mate",
+                "reference": "TESTE-LI-10",
+                "client": "TST-106",
+                "destination": "Loulé",
+                "unloadingLocation": "Cais fictício 9",
+                "notes": "encosto",
+                "issues": []
+              },
+              {
+                "quantity": "2,75",
+                "unit": "m²",
+                "description": "Ladrilho Íris Teste 12 mm Polido",
+                "commercialName": "Ladrilho Íris Teste",
+                "thickness": "12 mm",
+                "finish": "Polido",
+                "reference": "TESTE-LI-12",
+                "client": "TST-106",
+                "destination": "Loulé",
+                "unloadingLocation": "Cais fictício 9",
+                "notes": null,
+                "issues": []
+              },
+              {
+                "quantity": "8",
+                "unit": "cavaletes",
+                "description": "de ferro",
+                "commercialName": null,
+                "thickness": null,
+                "finish": null,
+                "reference": "TESTE-CAV-08",
+                "client": null,
+                "destination": "Loulé",
+                "unloadingLocation": null,
+                "notes": "ENCOMENDA + ESCOVAR",
+                "issues": []
+              }
+            ],
+            "totals": [
+              {
+                "scope": "page",
+                "destination": null,
+                "unit": "Paletes",
+                "quantity": "2"
+              },
+              {
+                "scope": "page",
+                "destination": null,
+                "unit": "m²",
+                "quantity": "4,00"
+              }
+            ],
+            "issues": []
+          }
+        ],
+        "totals": [
+          {
+            "scope": "document",
+            "destination": null,
+            "unit": "Chapas",
+            "quantity": "3"
+          },
+          {
+            "scope": "document",
+            "destination": null,
+            "unit": "Paletes",
+            "quantity": "2"
+          },
+          {
+            "scope": "document",
+            "destination": null,
+            "unit": "m²",
+            "quantity": "4,00"
+          }
+        ],
+        "issues": []
+      },
+      "checks": [
+        "Preservar as duas páginas, três totais documentais e os totais de página/destino no âmbito impresso.",
+        "Não agregar referências, espessuras, acabamentos ou clientes diferentes. Preservar os valores decimais como impressos.",
+        "Local de Carga Coimbra e Local de Descarga Santiago na primeira página.",
+        "A Qtd. administrativa 1 e a designação 8 cavaletes de ferro dão 8 cavaletes, ENCOMENDA sem cliente e ESCOVAR."
+      ]
+    }
+  ]
+}
