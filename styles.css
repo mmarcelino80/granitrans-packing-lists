@@ -1043,3 +1043,28 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
     font-size: .875rem;
   }
 }
+
+.logistics-mode .intro-card,
+.logistics-mode .materials-card,
+.logistics-mode .preview-card,
+.logistics-mode .document-actions,
+.logistics-mode .mobile-nav,
+.logistics-mode #custom-toggle,
+.logistics-mode #custom-destination,
+.logistics-mode #continue-manual {
+  display: none;
+}
+
+.logistics-mode .workspace { max-width: none; align-items: stretch; }
+.logistics-results { grid-area: preview; }
+.logistics-document [hidden] { display: none; }
+.logistics-document { display: grid; gap: .85rem; margin-block: 1rem; }
+.logistics-document textarea,
+.logistics-document pre { width: 100%; min-height: 14rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.logistics-document textarea { min-height: 45vh; }
+.logistics-document button { justify-self: start; }
+.logistics-results ul { padding-inline-start: 1.4rem; }
+@media (min-width: 861px) {
+  .logistics-mode .workspace { grid-template-columns: minmax(16rem, 1fr) minmax(25rem, 2fr); min-height: 84vh; }
+  .logistics-mode .route-section { display: none; }
+}

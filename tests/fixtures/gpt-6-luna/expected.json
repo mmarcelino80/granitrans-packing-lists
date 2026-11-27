@@ -11,6 +11,9 @@
       "file": "foto-guia-espessura.png",
       "mediaType": "image/png",
       "expected": {
+        "loadingWarehouse": "Braga",
+        "unloadingWarehouse": "Negrais",
+        "loadingDate": "2026-11-26",
         "pages": [
           {
             "page": 1,
@@ -24,7 +27,7 @@
                 "finish": "Polido",
                 "reference": "TESTE-QA-01",
                 "client": "TST-101",
-                "destination": "Montelume",
+                "destination": "Loulé",
                 "unloadingLocation": "Cais fictício 4",
                 "notes": "stock",
                 "issues": []
@@ -38,7 +41,7 @@
                 "finish": "Escovado",
                 "reference": "TESTE-GN-02",
                 "client": "TST-102",
-                "destination": "Montelume",
+                "destination": "Loulé",
                 "unloadingLocation": "Pórtico de teste",
                 "notes": "encosto",
                 "issues": []
@@ -60,13 +63,17 @@
       },
       "checks": [
         "Na primeira linha, a espessura é 12 mm, conforme o Artigo. O valor 20 mm da coluna Esp deve ser ignorado.",
-        "Na segunda linha, a espessura é null. O valor 30 mm da coluna Esp deve ser ignorado."
+        "Na segunda linha, a espessura é null. O valor 30 mm da coluna Esp deve ser ignorado.",
+        "Local de Carga Braga e Local de Descarga Negrais na primeira página."
       ]
     },
     {
       "file": "foto-guia-ilegivel.jpg",
       "mediaType": "image/jpeg",
       "expected": {
+        "loadingWarehouse": "Valence",
+        "unloadingWarehouse": "Paris",
+        "loadingDate": "2026-11-26",
         "pages": [
           {
             "page": 1,
@@ -80,7 +87,7 @@
                 "finish": null,
                 "reference": "TESTE-AB-10",
                 "client": "TST-103",
-                "destination": "Rochedouro",
+                "destination": "Paris",
                 "unloadingLocation": null,
                 "notes": "stock",
                 "issues": [
@@ -100,7 +107,7 @@
                 "finish": "Acetinado",
                 "reference": "TESTE-CD-11",
                 "client": null,
-                "destination": "Rochedouro",
+                "destination": "Paris",
                 "unloadingLocation": "Cais fictício 7",
                 "notes": null,
                 "issues": []
@@ -116,13 +123,17 @@
       "checks": [
         "Na primeira linha, a quantidade está integralmente tapada. Espera-se null com um aviso de quantidade ilegível.",
         "Não há totais impressos. Esperam-se listas de totais vazias.",
-        "Os travessões nas células indicam ausência de valor."
+        "Os travessões nas células indicam ausência de valor.",
+        "Local de Carga Valence e Local de Descarga Paris na primeira página."
       ]
     },
     {
       "file": "guia-duas-paginas.pdf",
       "mediaType": "application/pdf",
       "expected": {
+        "loadingWarehouse": "Coimbra",
+        "unloadingWarehouse": "Santiago",
+        "loadingDate": "2026-11-26",
         "pages": [
           {
             "page": 1,
@@ -136,7 +147,7 @@
                 "finish": "Acetinado",
                 "reference": "TESTE-QA-20",
                 "client": "TST-104",
-                "destination": "Rochedouro",
+                "destination": "Paris",
                 "unloadingLocation": "Pórtico de teste",
                 "notes": "stock",
                 "issues": []
@@ -150,7 +161,7 @@
                 "finish": "Polido",
                 "reference": "TESTE-QA-30",
                 "client": "TST-105",
-                "destination": "Montelume",
+                "destination": "Loulé",
                 "unloadingLocation": "Cais fictício 9",
                 "notes": "encosto",
                 "issues": []
@@ -165,7 +176,7 @@
               },
               {
                 "scope": "destination",
-                "destination": "Rochedouro",
+                "destination": "Paris",
                 "unit": "Chapas",
                 "quantity": "2"
               }
@@ -184,7 +195,7 @@
                 "finish": null,
                 "reference": "TESTE-AF-01",
                 "client": null,
-                "destination": "Montelume",
+                "destination": "Loulé",
                 "unloadingLocation": "Cais fictício 9",
                 "notes": "stock",
                 "issues": []
@@ -198,7 +209,7 @@
                 "finish": "Mate",
                 "reference": "TESTE-LI-10",
                 "client": "TST-106",
-                "destination": "Montelume",
+                "destination": "Loulé",
                 "unloadingLocation": "Cais fictício 9",
                 "notes": "encosto",
                 "issues": []
@@ -212,9 +223,23 @@
                 "finish": "Polido",
                 "reference": "TESTE-LI-12",
                 "client": "TST-106",
-                "destination": "Montelume",
+                "destination": "Loulé",
                 "unloadingLocation": "Cais fictício 9",
                 "notes": null,
+                "issues": []
+              },
+              {
+                "quantity": "8",
+                "unit": "cavaletes",
+                "description": "de ferro",
+                "commercialName": null,
+                "thickness": null,
+                "finish": null,
+                "reference": "TESTE-CAV-08",
+                "client": null,
+                "destination": "Loulé",
+                "unloadingLocation": null,
+                "notes": "ENCOMENDA + ESCOVAR",
                 "issues": []
               }
             ],
@@ -259,7 +284,9 @@
       },
       "checks": [
         "Preservar as duas páginas, três totais documentais e os totais de página/destino no âmbito impresso.",
-        "Não agregar referências, espessuras, acabamentos ou clientes diferentes. Preservar os valores decimais como impressos."
+        "Não agregar referências, espessuras, acabamentos ou clientes diferentes. Preservar os valores decimais como impressos.",
+        "Local de Carga Coimbra e Local de Descarga Santiago na primeira página.",
+        "A Qtd. administrativa 1 e a designação 8 cavaletes de ferro dão 8 cavaletes, ENCOMENDA sem cliente e ESCOVAR."
       ]
     }
   ]

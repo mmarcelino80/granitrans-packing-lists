@@ -242,11 +242,11 @@ function formatIntroduction(introduction, date, route) {
   ].join(BLOCK_SEPARATOR);
 }
 
-export function buildPackingList({ date, route, materials, introduction = DEFAULT_INTRODUCTION, demo = false }) {
+export function buildPackingList({ date, route, sectionRoute = route, materials, introduction = DEFAULT_INTRODUCTION, demo = false }) {
   const sections = [
     demo ? 'DEMONSTRAÇÃO — DADOS FICTÍCIOS' : '',
     formatIntroduction(introduction, date, route),
-    ...materialSections(route, materials),
+    ...materialSections(sectionRoute, materials),
     'Obrigado / Merci',
   ];
 

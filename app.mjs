@@ -10,7 +10,10 @@ import {
   validatePackingList,
 } from './packing-list.mjs';
 import { collectGuides } from './guides.mjs';
-import { extractionWorkerUrl } from './extraction-config.mjs';
+import * as extractionConfig from './extraction-config.mjs';
+import { createLogisticsUI } from './logistics-ui.mjs';
+
+const { extractionWorkerUrl } = extractionConfig;
 import { createExtractionClient } from './extraction-client.mjs';
 import {
   activeReviewRows, appendReviewDocuments, prepareReview, reviewIssues, reviewMaterials, reviewTotals,
@@ -37,6 +40,7 @@ let emptyDate = localDateValue();
 // The Worker checks the current and previous UTC day. Use the minimum guaranteed window.
 const safeRetryWindow = 24 * 60 * 60 * 1000;
 let extractionClient;
+let logistics;
 if (extractionWorkerUrl) {
   ui['analysis-actions'].hidden = false;
   try {
@@ -169,6 +173,7 @@ function renderGuides() {
     remove.addEventListener('click', () => {
       state.guides.splice(index, 1);
       renderGuides();
+      logistics?.render();
       (list.children[Math.min(index, state.guides.length - 1)]?.querySelector('button') ?? ui.guides).focus();
     });
     item.append(icon('file-earmark-text'), name, remove);
@@ -183,6 +188,7 @@ function attachGuides(files) {
   state.guides.push(...accepted);
   setMessage(ui['file-error'], errors.join('\n'));
   renderGuides();
+  logistics?.render();
 }
 
 const materialFields = [
@@ -298,6 +304,7 @@ function approvalControls() {
 }
 
 function refreshDocument() {
+  logistics?.render();
   state.approved = null;
   ui['txt-preview'].textContent = buildPackingList(documentData());
   ui['validation-errors'].replaceChildren();
@@ -594,7 +601,7 @@ ui['analyze-guides'].addEventListener('click', async () => {
   if (!extractionClient || state.demo || state.analyzing
     || (state.review && !state.failedAnalysis) || !state.guides.length) return;
   const files = [...state.guides];
-  if (files.length > 5) {
+  if (!logistics && files.length > 5) {
     setMessage(ui['analysis-status'], 'Selecione até cinco guias por análise.');
     return;
   }
@@ -657,14 +664,16 @@ ui['analyze-guides'].addEventListener('click', async () => {
     const documents = [...ready.values()].filter(({ files }) => files.some(selected)).map(({ document }) => document);
     const pending = [...failures.values()].filter(({ files }) => files.some(selected));
     state.failedAnalysis = pending.length > 0;
-    if (documents.length) {
+    if (logistics) {
+      logistics.receive([...ready.values()]);
+    } else if (documents.length) {
       const firstReview = !state.review;
       if (firstReview) state.review = prepareReview({ documents }, state.route);
       else appendReviewDocuments(state.review, documents, state.route);
       renderReview();
       if (firstReview) ui.materials.focus();
     }
-    let status = state.review ? 'Guias analisadas. Confira os materiais antes da aprovação.' : 'Nenhuma guia nova para analisar.';
+    let status = logistics && documents.length ? 'Guias analisadas. Confira a Packing List.' : state.review ? 'Guias analisadas. Confira os materiais antes da aprovação.' : 'Nenhuma guia nova para analisar.';
     if (pending.length === 1 && !state.review) {
       status = pending[0].message;
     } else if (pending.length) {
@@ -727,6 +736,16 @@ ui.approve.addEventListener('click', approveDocument);
 ui.download.addEventListener('click', downloadDocument);
 ui.share.addEventListener('click', shareDocument);
 
+if (extractionClient && extractionConfig.logisticsEnabled) {
+  document.body.classList.add('logistics-mode');
+  ui.date.value = '';
+  const container = element('section', 'card logistics-results');
+  ui.preview.after(container);
+  logistics = createLogisticsUI(container, () => ({
+    route: state.route, guides: state.guides, date: ui.date.value, busy: state.analyzing,
+  }));
+  ui['guides-processing-note'].textContent = 'Adicione as guias e selecione Analisar guias.';
+}
 renderMaterials();
 refreshDocument();
 analysisControls();

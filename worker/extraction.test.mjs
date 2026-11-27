@@ -37,6 +37,7 @@ const material = {
 
 function documentResult(pages = 1) {
   return {
+    loadingWarehouse: 'Negrais', unloadingWarehouse: 'Valence', loadingDate: null,
     pages: Array.from({ length: pages }, (_, index) => ({
       page: index + 1,
       lines: [material],
@@ -174,7 +175,7 @@ test('uses one strict Responses API request and returns server-owned provenance'
       assert.equal(format.type, 'json_schema');
       assert.equal(format.strict, true);
       assert.equal(format.schema.additionalProperties, false);
-      assert.deepEqual(format.schema.required, ['pages', 'totals', 'issues']);
+      assert.deepEqual(format.schema.required, ['loadingWarehouse', 'unloadingWarehouse', 'loadingDate', 'pages', 'totals', 'issues']);
       return respond(data);
     },
   });

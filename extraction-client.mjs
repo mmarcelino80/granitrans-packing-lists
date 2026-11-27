@@ -87,7 +87,7 @@ export function createExtractionClient(workerUrl, page = window) {
     const nonce = page.crypto.randomUUID();
     const endpoint = new URL('/auth', url);
     endpoint.searchParams.set('nonce', nonce);
-    const popup = page.open(endpoint.href, '_blank', 'popup,width=530,height=690');
+    const popup = page.open(endpoint.href, '_blank', 'popup,width=440,height=575');
     if (!popup) return Promise.reject(new Error('Autorize a abertura da janela de autenticação.'));
 
     const bridge = { popup, nonce, handle: Symbol(), expiresAt: 0, busy: false };

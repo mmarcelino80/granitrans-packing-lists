@@ -12,6 +12,14 @@ python3 -m http.server 8000
 
 Abra `http://localhost:8000/granitrans-packing-lists/`. Se a cópia local tiver outro nome, use esse nome no endereço. Os caminhos relativos também permitem servir o projeto em `/granitrans-packing-lists/` no GitHub Pages.
 
+Para rever a v0.2 numa sessão privada do Edge, consulte o [guia de instalação e testes no Windows](docs/testar-v02-windows.md). O lançador abre em modo de simulação por predefinição.
+
+## Leitura assistida v0.2
+
+Com o Worker configurado, a aplicação organiza os resultados por local de descarga física. No desktop, edite o texto do resultado, aprove e descarregue um PDF A4 por descarga. No telemóvel, selecione a ordem das descargas francesas, analise as guias e aprove o TXT bilingue antes de preparar o email. As guias pendentes e os locais de descarga em dúvida bloqueiam a aprovação. No desktop, corrija o texto e confirme os avisos junto das guias de origem.
+
+O Worker valida os campos de carga, descarga e data no esquema da leitura. Atualize o Worker e o frontend como parte da mesma revisão aprovada. O lançador privado usa resultados sintéticos no modo predefinido. [Testar no Windows](docs/testar-v02-windows.md)
+
 ## Preparar uma expedição
 
 1. Confirme a data de carregamento. Toque nos destinos pela ordem da rota. Pode retirar um destino e voltar a selecioná-lo para o colocar no fim. Use **Outro destino/armazém** para introduzir os nomes adicionais.

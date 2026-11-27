@@ -178,6 +178,7 @@ test('quota is enforced before a Responses API request; successful calls include
     return Response.json({
       status: 'completed',
       output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({
+        loadingWarehouse: null, unloadingWarehouse: null, loadingDate: null,
         pages: [{ page: 1, lines: [], totals: [], issues: [] }], totals: [], issues: [],
       }) }] }],
     });
