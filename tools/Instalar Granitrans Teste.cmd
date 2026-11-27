@@ -9,7 +9,7 @@ set "PREVIEW_VENV=%PREVIEW_ROOT%\venv"
 set "PREVIEW_PYTHON=%PREVIEW_VENV%\Scripts\python.exe"
 set "PREVIEW_REPO=https://github.com/mmarcelino80/granitrans-packing-lists.git"
 set "PREVIEW_BRANCH=feat/packing-list-v02-openai"
-set "PREVIEW_COMMIT=2c1ac30cd0ec0b9db80bf3f24518a2afbd13064b"
+set "PREVIEW_COMMIT=d34fa31df4316ecc7e125c9fa26f6e2689f0b8ea"
 
 if not exist "%~dp0private_preview.py" goto missing_files
 if not exist "%~dp0private-preview-requirements.txt" goto missing_files

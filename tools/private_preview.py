@@ -25,7 +25,7 @@ APP_URL = policy.APP_URL
 WORKER_ORIGIN = policy.WORKER_ORIGIN
 SIM_WORKER_ORIGIN = "https://packing-list-simulation.example.test"
 APP_TITLE = "Granitrans v0.2 — Ambiente de testes"
-APPROVED_COMMIT = "2c1ac30cd0ec0b9db80bf3f24518a2afbd13064b"
+APPROVED_COMMIT = "d34fa31df4316ecc7e125c9fa26f6e2689f0b8ea"
 MODES = {"simulation": "Simulação", "auth": "Autenticação", "live": "Extração real"}
 NONCE = re.compile(r"[A-Za-z0-9_-]{32,128}")
 SCRIPT = "text/javascript; charset=utf-8"

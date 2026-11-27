@@ -6,7 +6,7 @@ Comece por **Simulação**. A autenticação pode ser verificada separadamente. 
 
 1. Tenha o Microsoft Edge, o Git para Windows e o Python 3.10 ou posterior instalados. Recomenda-se Python 3.12 ou 3.13.
 2. Se recebeu o pacote ZIP, extraia-o para uma pasta. Mantenha os ficheiros da pasta `tools` juntos e faça duplo clique em [Instalar Granitrans Teste.cmd](../tools/Instalar%20Granitrans%20Teste.cmd). A instalação descarrega a revisão aprovada e prepara as dependências do teste. Precisa de Internet nesta etapa.
-3. Confirme no terminal que a preparação terminou. A instalação fixa a aplicação na revisão `2c1ac30`, na cópia isolada `%LOCALAPPDATA%\GranitransV02Teste\app-logistica`, e usa um ambiente Python próprio. Consulte o aviso do instalador se já existir uma cópia com alterações ou uma revisão diferente.
+3. Confirme no terminal que a preparação terminou. A instalação fixa a aplicação na revisão `d34fa31`, na cópia isolada `%LOCALAPPDATA%\GranitransV02Teste\app-logistica`, e usa um ambiente Python próprio. Consulte o aviso do instalador se já existir uma cópia com alterações ou uma revisão diferente.
 
 O instalador atua no seu computador. As configurações de GitHub Pages, Cloudflare Access e do Worker continuam a ser administradas pelo processo de publicação aprovado.
 
